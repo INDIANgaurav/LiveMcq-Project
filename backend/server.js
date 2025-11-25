@@ -13,13 +13,30 @@ const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
-    origin: 'http://localhost:5173',
+    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
     methods: ['GET', 'POST'],
+    credentials: true
   },
 });
 
-app.use(cors());
+app.use(cors({
+  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  credentials: true
+}));
 app.use(express.json());
+
+// Health check route
+app.get('/', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    message: 'Live MCQ System API is running!',
+    endpoints: {
+      admin: '/api/admin/*',
+      session: '/api/session/*',
+      questions: '/api/questions/*'
+    }
+  });
+});
 
 // Middleware to verify JWT token
 const authenticateToken = (req, res, next) => {

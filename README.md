@@ -141,6 +141,25 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 This project is open source and available under the MIT License.
 
+## 🚀 Deployment
+
+### Frontend (Vercel)
+1. Push code to GitHub
+2. Import project in Vercel
+3. Add environment variable: `VITE_API_URL=<your-backend-url>`
+4. Deploy
+
+### Backend (Render/Railway)
+1. Create new Web Service
+2. Connect GitHub repository
+3. Add environment variables:
+   - `DATABASE_URL`
+   - `JWT_SECRET`
+   - `FRONTEND_URL=https://live-mcq-tool.vercel.app`
+4. Deploy
+
+**Live Demo**: [https://live-mcq-tool.vercel.app](https://live-mcq-tool.vercel.app)
+
 ## 👨‍💻 Author
 
 Powered by FINSENSOR

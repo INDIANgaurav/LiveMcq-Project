@@ -5,13 +5,26 @@ dotenv.config();
 
 const { Pool } = pg;
 
-const pool = new Pool({
-  user: process.env.DB_USER,
-  host: process.env.DB_HOST,
-  database: process.env.DB_NAME,
-  password: process.env.DB_PASSWORD,
-  port: process.env.DB_PORT,
-});
+// Use DATABASE_URL for production (Render) or individual credentials for local
+console.log('DATABASE_URL exists:', !!process.env.DATABASE_URL);
+console.log('Using connection:', process.env.DATABASE_URL ? 'DATABASE_URL' : 'Individual credentials');
+
+const pool = new Pool(
+  process.env.DATABASE_URL
+    ? {
+        connectionString: process.env.DATABASE_URL,
+        ssl: {
+          rejectUnauthorized: false
+        }
+      }
+    : {
+        user: process.env.DB_USER,
+        host: process.env.DB_HOST,
+        database: process.env.DB_NAME,
+        password: process.env.DB_PASSWORD,
+        port: process.env.DB_PORT,
+      }
+);
 
 // Create tables
 const initDB = async () => {
