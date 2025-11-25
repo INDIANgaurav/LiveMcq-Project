@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { API_BASE } from '../config';
 
 function Navbar() {
   const navigate = useNavigate();
@@ -141,7 +142,7 @@ function Navbar() {
                 onClick={async () => {
                   const token = localStorage.getItem('adminToken');
                   try {
-                    await fetch('http://localhost:5000/api/admin/session/delete', {
+                    await fetch(`${API_BASE}/admin/session/delete`, {
                       method: 'DELETE',
                       headers: { 'Authorization': `Bearer ${token}` }
                     });
@@ -267,7 +268,7 @@ function Navbar() {
               onClick={async () => {
                 const token = localStorage.getItem('adminToken');
                 try {
-                  await fetch('http://localhost:5000/api/admin/session/delete', {
+                  await fetch(`${API_BASE}/admin/session/delete`, {
                     method: 'DELETE',
                     headers: { 'Authorization': `Bearer ${token}` }
                   });

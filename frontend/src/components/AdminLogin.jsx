@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-
-const API_URL = 'http://localhost:5000/api';
+import { API_BASE as API_URL } from '../config';
 
 function AdminLogin() {
   const [isLogin, setIsLogin] = useState(true);

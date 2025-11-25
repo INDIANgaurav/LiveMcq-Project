@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import Toast from './Toast';
-
-const API_URL = 'http://localhost:5000/api';
+import { API_BASE as API_URL } from '../config';
 
 function EditQuestion() {
   const { id } = useParams();

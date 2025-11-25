@@ -3,8 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import Toast from './Toast';
 import VoteHistory from './VoteHistory';
-
-const API_URL = 'http://localhost:5000/api';
+import { API_BASE as API_URL, SOCKET_URL } from '../config';
 
 function AdminDashboard() {
   const [questions, setQuestions] = useState([]);
@@ -80,7 +79,7 @@ function AdminDashboard() {
     }
 
     // Create socket connection
-    const newSocket = io('http://localhost:5000', {
+    const newSocket = io(SOCKET_URL, {
       transports: ['websocket'],
       reconnection: false
     });

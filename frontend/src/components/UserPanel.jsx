@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
-
-const API_URL = 'http://localhost:5000/api';
+import { API_BASE as API_URL, SOCKET_URL } from '../config';
 
 function UserPanel() {
   const { code } = useParams();
@@ -41,7 +40,7 @@ function UserPanel() {
     validateSession();
 
     // Create socket connection
-    const newSocket = io('http://localhost:5000', {
+    const newSocket = io(SOCKET_URL, {
       transports: ['websocket'],
       reconnection: false
     });
