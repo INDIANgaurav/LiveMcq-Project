@@ -1,0 +1,101 @@
+import pg from 'pg';
+import dotenv from 'dotenv';
+
+dotenv.config();
+
+const { Pool } = pg;
+
+const pool = new Pool({
+  user: process.env.DB_USER,
+  host: process.env.DB_HOST,
+  database: process.env.DB_NAME,
+  password: process.env.DB_PASSWORD,
+  port: process.env.DB_PORT,
+});
+
+// Create tables
+const initDB = async () => {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS questions (
+      id SERIAL PRIMARY KEY,
+      admin_id INTEGER REFERENCES admins(id) ON DELETE CASCADE,
+      heading VARCHAR(255) NOT NULL,
+      description TEXT,
+      is_active BOOLEAN DEFAULT false,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS options (
+      id SERIAL PRIMARY KEY,
+      question_id INTEGER REFERENCES questions(id) ON DELETE CASCADE,
+      option_text VARCHAR(255) NOT NULL
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS sub_questions (
+      id SERIAL PRIMARY KEY,
+      question_id INTEGER REFERENCES questions(id) ON DELETE CASCADE,
+      sub_question_text TEXT NOT NULL,
+      order_index INTEGER DEFAULT 0,
+      is_active BOOLEAN DEFAULT false
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS sub_options (
+      id SERIAL PRIMARY KEY,
+      sub_question_id INTEGER REFERENCES sub_questions(id) ON DELETE CASCADE,
+      option_text VARCHAR(255) NOT NULL
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS admins (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(255) NOT NULL,
+      email VARCHAR(255) UNIQUE NOT NULL,
+      password VARCHAR(255) NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS sessions (
+      id SERIAL PRIMARY KEY,
+      session_code VARCHAR(50) UNIQUE NOT NULL,
+      admin_id INTEGER REFERENCES admins(id) ON DELETE CASCADE,
+      admin_name VARCHAR(255),
+      is_active BOOLEAN DEFAULT true,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS votes (
+      id SERIAL PRIMARY KEY,
+      question_id INTEGER REFERENCES questions(id) ON DELETE CASCADE,
+      option_id INTEGER REFERENCES options(id) ON DELETE CASCADE,
+      user_ip VARCHAR(50),
+      voted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS sub_votes (
+      id SERIAL PRIMARY KEY,
+      sub_question_id INTEGER REFERENCES sub_questions(id) ON DELETE CASCADE,
+      sub_option_id INTEGER REFERENCES sub_options(id) ON DELETE CASCADE,
+      user_ip VARCHAR(50),
+      voted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  console.log('Database tables created successfully');
+};
+
+initDB().catch(console.error);
+
+export default pool;

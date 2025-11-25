@@ -1,0 +1,253 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: #f5f7fa;
+  min-height: 100vh;
+  color: #333;
+  position: relative;
+}
+
+body::after {
+  content: 'Powered by FINSENSOR';
+  position: fixed;
+  bottom: 20px;
+  right: 30px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #3498db;
+  opacity: 0.6;
+  z-index: 9999;
+  letter-spacing: 1px;
+  pointer-events: none;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* Smooth transitions */
+button {
+  transition: all 0.3s ease;
+}
+
+button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+button:active {
+  transform: translateY(0);
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.5s ease;
+}
+
+.pulse {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+/* Responsive Design */
+* {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 16px;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Mobile First - Extra Small devices (phones, less than 576px) */
+@media (max-width: 575px) {
+  body::after {
+    font-size: 9px;
+    bottom: 8px;
+    right: 8px;
+    letter-spacing: 0.5px;
+  }
+  
+  body {
+    padding: 0 8px;
+  }
+  
+  /* Force single column on very small screens */
+  [style*="grid-template-columns"] {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* Small devices (landscape phones, 576px and up) */
+@media (min-width: 576px) and (max-width: 767px) {
+  body::after {
+    font-size: 10px;
+    bottom: 10px;
+    right: 12px;
+  }
+  
+  body {
+    padding: 0 12px;
+  }
+}
+
+/* Medium devices (tablets, 768px and up) */
+@media (min-width: 768px) and (max-width: 991px) {
+  body::after {
+    font-size: 12px;
+    bottom: 12px;
+    right: 20px;
+  }
+}
+
+/* Large devices (desktops, 992px and up) */
+@media (min-width: 992px) {
+  body::after {
+    font-size: 14px;
+    bottom: 20px;
+    right: 30px;
+  }
+}
+
+/* Ensure images and media are responsive */
+img, video {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Prevent horizontal scroll */
+body {
+  overflow-x: hidden;
+}
+
+#root {
+  width: 100%;
+  overflow-x: hidden;
+}
+
+/* HomePage responsive styles */
+@media (max-width: 768px) {
+  .home-container {
+    padding: 10px !important;
+  }
+  
+  .home-card {
+    padding: 18px 14px !important;
+  }
+  
+  .home-icon {
+    font-size: 32px !important;
+    margin-bottom: 8px !important;
+  }
+  
+  .home-title {
+    font-size: 18px !important;
+    margin-bottom: 5px !important;
+  }
+  
+  .home-subtitle {
+    font-size: 12px !important;
+    margin-bottom: 16px !important;
+  }
+  
+  .home-button {
+    padding: 11px 14px !important;
+    gap: 8px !important;
+  }
+  
+  .home-button-icon {
+    font-size: 17px !important;
+  }
+  
+  .home-button-text {
+    font-size: 13px !important;
+  }
+  
+  .home-button-subtext {
+    font-size: 10px !important;
+  }
+  
+  .home-footer {
+    margin-top: 14px !important;
+    padding: 7px !important;
+    font-size: 10px !important;
+  }
+}
+
+/* HomePage Navbar Responsive */
+.home-navbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px 30px;
+  background-color: rgba(255,255,255,0.15);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.home-navbar-buttons {
+  display: flex;
+  gap: 12px;
+}
+
+@media (max-width: 1200px) {
+  .home-navbar {
+    flex-direction: column;
+    padding: 15px;
+    gap: 12px;
+  }
+  
+  .home-navbar-buttons {
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
+  }
+  
+  .home-navbar-buttons button {
+    width: 100%;
+    padding: 12px 20px;
+    font-size: 15px;
+  }
+}
