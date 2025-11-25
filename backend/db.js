@@ -28,43 +28,7 @@ const pool = new Pool(
 
 // Create tables
 const initDB = async () => {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS questions (
-      id SERIAL PRIMARY KEY,
-      admin_id INTEGER REFERENCES admins(id) ON DELETE CASCADE,
-      heading VARCHAR(255) NOT NULL,
-      description TEXT,
-      is_active BOOLEAN DEFAULT false,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS options (
-      id SERIAL PRIMARY KEY,
-      question_id INTEGER REFERENCES questions(id) ON DELETE CASCADE,
-      option_text VARCHAR(255) NOT NULL
-    )
-  `);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS sub_questions (
-      id SERIAL PRIMARY KEY,
-      question_id INTEGER REFERENCES questions(id) ON DELETE CASCADE,
-      sub_question_text TEXT NOT NULL,
-      order_index INTEGER DEFAULT 0,
-      is_active BOOLEAN DEFAULT false
-    )
-  `);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS sub_options (
-      id SERIAL PRIMARY KEY,
-      sub_question_id INTEGER REFERENCES sub_questions(id) ON DELETE CASCADE,
-      option_text VARCHAR(255) NOT NULL
-    )
-  `);
-
+  // Create admins table first (no dependencies)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS admins (
       id SERIAL PRIMARY KEY,
@@ -75,6 +39,7 @@ const initDB = async () => {
     )
   `);
 
+  // Create sessions table (depends on admins)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS sessions (
       id SERIAL PRIMARY KEY,
@@ -86,6 +51,48 @@ const initDB = async () => {
     )
   `);
 
+  // Create questions table (depends on admins)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS questions (
+      id SERIAL PRIMARY KEY,
+      admin_id INTEGER REFERENCES admins(id) ON DELETE CASCADE,
+      heading VARCHAR(255) NOT NULL,
+      description TEXT,
+      is_active BOOLEAN DEFAULT false,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // Create options table (depends on questions)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS options (
+      id SERIAL PRIMARY KEY,
+      question_id INTEGER REFERENCES questions(id) ON DELETE CASCADE,
+      option_text VARCHAR(255) NOT NULL
+    )
+  `);
+
+  // Create sub_questions table (depends on questions)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS sub_questions (
+      id SERIAL PRIMARY KEY,
+      question_id INTEGER REFERENCES questions(id) ON DELETE CASCADE,
+      sub_question_text TEXT NOT NULL,
+      order_index INTEGER DEFAULT 0,
+      is_active BOOLEAN DEFAULT false
+    )
+  `);
+
+  // Create sub_options table (depends on sub_questions)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS sub_options (
+      id SERIAL PRIMARY KEY,
+      sub_question_id INTEGER REFERENCES sub_questions(id) ON DELETE CASCADE,
+      option_text VARCHAR(255) NOT NULL
+    )
+  `);
+
+  // Create votes table (depends on questions and options)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS votes (
       id SERIAL PRIMARY KEY,
@@ -96,6 +103,7 @@ const initDB = async () => {
     )
   `);
 
+  // Create sub_votes table (depends on sub_questions and sub_options)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS sub_votes (
       id SERIAL PRIMARY KEY,
