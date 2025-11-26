@@ -9,10 +9,10 @@ function VoteHistory({ questionId }) {
   useEffect(() => {
     fetchHistory();
     
-    // Poll every 2 seconds for real-time updates
+    // Poll every 5 seconds for real-time updates (reduced load)
     const interval = setInterval(() => {
       fetchHistory();
-    }, 2000);
+    }, 5000);
     
     return () => clearInterval(interval);
   }, [questionId]);

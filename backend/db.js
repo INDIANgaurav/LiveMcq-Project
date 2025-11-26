@@ -15,7 +15,10 @@ const pool = new Pool(
         connectionString: process.env.DATABASE_URL,
         ssl: {
           rejectUnauthorized: false
-        }
+        },
+        max: 20, // Maximum 20 connections
+        idleTimeoutMillis: 30000,
+        connectionTimeoutMillis: 2000,
       }
     : {
         user: process.env.DB_USER,
@@ -23,6 +26,7 @@ const pool = new Pool(
         database: process.env.DB_NAME,
         password: process.env.DB_PASSWORD,
         port: process.env.DB_PORT,
+        max: 10,
       }
 );
 
