@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { io } from 'socket.io-client';
+import { API_BASE as API_URL, SOCKET_URL } from '../config';
 
-const API_URL = 'http://localhost:5000/api';
-const socket = io('http://localhost:5000');
+const socket = io(SOCKET_URL);
 
 function AdminPanel() {
   const [heading, setHeading] = useState('');
