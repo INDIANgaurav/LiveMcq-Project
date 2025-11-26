@@ -146,7 +146,12 @@ function UserPanel() {
     
     // Track this question as voted
     const questionKey = question.type === 'sub' ? `sub-${question.id}` : `main-${question.id}`;
-    setVotedQuestions(prev => new Set([...prev, questionKey]));
+    console.log('Voted on:', questionKey);
+    setVotedQuestions(prev => {
+      const newSet = new Set([...prev, questionKey]);
+      console.log('Voted questions:', Array.from(newSet));
+      return newSet;
+    });
   };
 
   // Show invalid session message
@@ -277,7 +282,9 @@ function UserPanel() {
               setQuestion(mainQuestion);
               setActiveView('main');
               // Check if already voted on main question
-              const alreadyVoted = votedQuestions.has(`main-${mainQuestion.id}`);
+              const questionKey = `main-${mainQuestion.id}`;
+              const alreadyVoted = votedQuestions.has(questionKey);
+              console.log('Switching to main, voted?', alreadyVoted, 'Key:', questionKey, 'Set:', Array.from(votedQuestions));
               setHasVoted(alreadyVoted);
               setSelectedOption(null);
               setResults([]);
@@ -307,7 +314,9 @@ function UserPanel() {
               setQuestion(subQuestion);
               setActiveView('sub');
               // Check if already voted on sub question
-              const alreadyVoted = votedQuestions.has(`sub-${subQuestion.id}`);
+              const questionKey = `sub-${subQuestion.id}`;
+              const alreadyVoted = votedQuestions.has(questionKey);
+              console.log('Switching to sub, voted?', alreadyVoted, 'Key:', questionKey, 'Set:', Array.from(votedQuestions));
               setHasVoted(alreadyVoted);
               setSelectedOption(null);
               setResults([]);
