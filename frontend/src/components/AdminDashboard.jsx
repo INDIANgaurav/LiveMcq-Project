@@ -18,6 +18,7 @@ function AdminDashboard() {
   const [showMenu, setShowMenu] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [questionTimers, setQuestionTimers] = useState({});
+  const [timerIntervals, setTimerIntervals] = useState({});
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -160,6 +161,11 @@ function AdminDashboard() {
           const newTime = (prev[id] || 0) - 1;
           if (newTime <= 0) {
             clearInterval(timerInterval);
+            setTimerIntervals(prev => {
+              const newIntervals = { ...prev };
+              delete newIntervals[id];
+              return newIntervals;
+            });
             // Auto-stop the question
             fetch(`${API_URL}/admin/questions/${id}/toggle`, { 
               method: 'PATCH',
@@ -181,8 +187,19 @@ function AdminDashboard() {
           return { ...prev, [id]: newTime };
         });
       }, 1000);
+      
+      // Store interval reference
+      setTimerIntervals(prev => ({ ...prev, [id]: timerInterval }));
     } else {
       // If stopping manually, clear timer
+      if (timerIntervals[id]) {
+        clearInterval(timerIntervals[id]);
+        setTimerIntervals(prev => {
+          const newIntervals = { ...prev };
+          delete newIntervals[id];
+          return newIntervals;
+        });
+      }
       setQuestionTimers(prev => ({ ...prev, [id]: 0 }));
     }
     

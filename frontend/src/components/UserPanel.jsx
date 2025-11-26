@@ -12,6 +12,7 @@ function UserPanel() {
   const [activeView, setActiveView] = useState('main'); // 'main' or 'sub'
   const [selectedOption, setSelectedOption] = useState(null);
   const [hasVoted, setHasVoted] = useState(false);
+  const [votedQuestions, setVotedQuestions] = useState(new Set()); // Track voted questions
   const [results, setResults] = useState([]);
   const [showResults, setShowResults] = useState(false);
   const [userId] = useState('user-' + Math.random().toString(36).substr(2, 9));
@@ -54,10 +55,12 @@ function UserPanel() {
       setQuestion(newQuestion);
       setActiveView('main');
       setSubQuestion(null);
-      setHasVoted(false);
+      // Check if already voted on this question
+      const alreadyVoted = votedQuestions.has(`main-${newQuestion.id}`);
+      setHasVoted(alreadyVoted);
       setSelectedOption(null);
       setResults([]);
-      setShowResults(false);
+      setShowResults(alreadyVoted); // Show results if already voted
     });
 
     // Listen for new sub-questions
@@ -65,10 +68,12 @@ function UserPanel() {
       setSubQuestion(newSubQuestion);
       setQuestion(newSubQuestion);
       setActiveView('sub');
-      setHasVoted(false);
+      // Check if already voted on this sub-question
+      const alreadyVoted = votedQuestions.has(`sub-${newSubQuestion.id}`);
+      setHasVoted(alreadyVoted);
       setSelectedOption(null);
       setResults([]);
-      setShowResults(false);
+      setShowResults(alreadyVoted); // Show results if already voted
     });
 
     // Listen for vote updates
@@ -138,6 +143,10 @@ function UserPanel() {
     });
 
     setHasVoted(true);
+    
+    // Track this question as voted
+    const questionKey = question.type === 'sub' ? `sub-${question.id}` : `main-${question.id}`;
+    setVotedQuestions(prev => new Set([...prev, questionKey]));
   };
 
   // Show invalid session message
