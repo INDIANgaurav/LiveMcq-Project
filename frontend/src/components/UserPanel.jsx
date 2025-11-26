@@ -276,10 +276,12 @@ function UserPanel() {
             onClick={() => {
               setQuestion(mainQuestion);
               setActiveView('main');
-              setHasVoted(false);
+              // Check if already voted on main question
+              const alreadyVoted = votedQuestions.has(`main-${mainQuestion.id}`);
+              setHasVoted(alreadyVoted);
               setSelectedOption(null);
               setResults([]);
-              setShowResults(false);
+              setShowResults(alreadyVoted);
             }}
             style={{
               padding: 'clamp(12px, 3vw, 15px)',
@@ -304,10 +306,12 @@ function UserPanel() {
             onClick={() => {
               setQuestion(subQuestion);
               setActiveView('sub');
-              setHasVoted(false);
+              // Check if already voted on sub question
+              const alreadyVoted = votedQuestions.has(`sub-${subQuestion.id}`);
+              setHasVoted(alreadyVoted);
               setSelectedOption(null);
               setResults([]);
-              setShowResults(false);
+              setShowResults(alreadyVoted);
             }}
             style={{
               padding: 'clamp(12px, 3vw, 15px)',
