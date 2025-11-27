@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import Toast from './Toast';
@@ -7,8 +7,10 @@ import { API_BASE as API_URL, SOCKET_URL } from '../config';
 
 function AdminDashboard() {
   const [questions, setQuestions] = useState([]);
+  const [projects, setProjects] = useState([]);
   const [liveResults, setLiveResults] = useState({});
   const [subQuestions, setSubQuestions] = useState({});
+  const [subResults, setSubResults] = useState({});
   const [expandedQuestion, setExpandedQuestion] = useState(null);
   const [socket, setSocket] = useState(null);
   const [sessionCode, setSessionCode] = useState(null);
@@ -16,9 +18,16 @@ function AdminDashboard() {
   const [toast, setToast] = useState(null);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   const [showMenu, setShowMenu] = useState(false);
-  const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [questionTimers, setQuestionTimers] = useState({});
-  const [timerIntervals, setTimerIntervals] = useState({});
+  const timerIntervalsRef = useRef({});
+  const [subQuestionTimers, setSubQuestionTimers] = useState({});
+  const subTimerIntervalsRef = useRef({});
+  const [expandedProjects, setExpandedProjects] = useState({});
+  const [editingProject, setEditingProject] = useState(null);
+  const [editProjectData, setEditProjectData] = useState({ title: '', description: '', date: '' });
+  const [togglingQuestions, setTogglingQuestions] = useState({});
+  const [deleteProjectModal, setDeleteProjectModal] = useState(null);
+  const [clearHistoryModal, setClearHistoryModal] = useState(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -61,7 +70,6 @@ function AdminDashboard() {
           }
 
           const data = await res.json();
-          console.log('Session created:', data);
           
           if (data.sessionCode) {
             localStorage.setItem('adminSessionCode', data.sessionCode);
@@ -89,14 +97,41 @@ function AdminDashboard() {
     fetchQuestions();
 
     newSocket.on('voteUpdate', (data) => {
-      setLiveResults((prev) => ({
-        ...prev,
-        [data.questionId]: data.results,
-      }));
+      if (data.type === 'sub') {
+        // Sub-question vote update
+        const subQuestionId = data.questionId;
+        setSubResults((prev) => {
+          const updated = { ...prev };
+          // Find which main question this sub-question belongs to
+          Object.keys(updated).forEach(qId => {
+            if (updated[qId]) {
+              updated[qId] = updated[qId].map(subQ => 
+                subQ.id === subQuestionId 
+                  ? { ...subQ, results: data.results }
+                  : subQ
+              );
+            }
+          });
+          return updated;
+        });
+      } else {
+        // Main question vote update
+        setLiveResults((prev) => ({
+          ...prev,
+          [data.questionId]: data.results,
+        }));
+      }
     });
 
     return () => {
       newSocket.disconnect();
+      // Clear all timers on unmount
+      Object.values(timerIntervalsRef.current).forEach(interval => {
+        if (interval) clearInterval(interval);
+      });
+      Object.values(subTimerIntervalsRef.current).forEach(interval => {
+        if (interval) clearInterval(interval);
+      });
     };
   }, [navigate]);
 
@@ -105,6 +140,15 @@ function AdminDashboard() {
     if (!token) return;
 
     try {
+      // Fetch projects first
+      const projectsRes = await fetch(`${API_URL}/admin/projects`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (projectsRes.ok) {
+        const projectsData = await projectsRes.json();
+        setProjects(projectsData);
+      }
+      
       const res = await fetch(`${API_URL}/admin/questions`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -131,6 +175,41 @@ function AdminDashboard() {
           if (results.mainResults) {
             setLiveResults((prev) => ({ ...prev, [q.id]: results.mainResults }));
           }
+          if (results.subResults) {
+            setSubResults((prev) => ({ ...prev, [q.id]: results.subResults }));
+          }
+          
+          // Calculate remaining time if activated_at exists
+          if (q.activated_at) {
+            const activatedTime = new Date(q.activated_at).getTime();
+            const now = Date.now();
+            const elapsed = Math.floor((now - activatedTime) / 1000);
+            const remaining = Math.max(0, 60 - elapsed);
+            
+            if (remaining > 0 && !timerIntervalsRef.current[q.id]) {
+              // Only start timer if one doesn't exist already
+              setQuestionTimers(prev => ({ ...prev, [q.id]: remaining }));
+              
+              const timerInterval = setInterval(() => {
+                setQuestionTimers(prev => {
+                  const newTime = (prev[q.id] || 0) - 1;
+                  if (newTime <= 0) {
+                    clearInterval(timerInterval);
+                    delete timerIntervalsRef.current[q.id];
+                    // Auto-stop
+                    fetch(`${API_URL}/admin/questions/${q.id}/toggle`, { 
+                      method: 'PATCH',
+                      headers: { 'Authorization': `Bearer ${token}` }
+                    }).then(() => fetchQuestions());
+                    return { ...prev, [q.id]: 0 };
+                  }
+                  return { ...prev, [q.id]: newTime };
+                });
+              }, 1000);
+              
+              timerIntervalsRef.current[q.id] = timerInterval;
+            }
+          }
         }
         
         // Fetch sub-questions
@@ -140,6 +219,38 @@ function AdminDashboard() {
         const subData = await subRes.json();
         if (subData.length > 0) {
           setSubQuestions((prev) => ({ ...prev, [q.id]: subData }));
+          
+          // Start timers for active sub-questions
+          for (const subQ of subData) {
+            if (subQ.is_active && subQ.activated_at) {
+              const activatedTime = new Date(subQ.activated_at).getTime();
+              const now = Date.now();
+              const elapsed = Math.floor((now - activatedTime) / 1000);
+              const remaining = Math.max(0, 60 - elapsed);
+              
+              if (remaining > 0 && !subTimerIntervalsRef.current[subQ.id]) {
+                setSubQuestionTimers(prev => ({ ...prev, [subQ.id]: remaining }));
+                
+                const timerInterval = setInterval(() => {
+                  setSubQuestionTimers(prev => {
+                    const newTime = (prev[subQ.id] || 0) - 1;
+                    if (newTime <= 0) {
+                      clearInterval(timerInterval);
+                      delete subTimerIntervalsRef.current[subQ.id];
+                      // Auto-stop
+                      fetch(`${API_URL}/admin/sub-questions/${subQ.id}/toggle`, { 
+                        method: 'PATCH'
+                      }).then(() => fetchQuestions());
+                      return { ...prev, [subQ.id]: 0 };
+                    }
+                    return { ...prev, [subQ.id]: newTime };
+                  });
+                }, 1000);
+                
+                subTimerIntervalsRef.current[subQ.id] = timerInterval;
+              }
+            }
+          }
         }
       }
     } catch (error) {
@@ -149,10 +260,27 @@ function AdminDashboard() {
   };
 
   const toggleQuestion = async (id) => {
+    // Prevent double-click
+    if (togglingQuestions[id]) return;
+    setTogglingQuestions(prev => ({ ...prev, [id]: true }));
+    
     const token = localStorage.getItem('adminToken');
     const question = questions.find(q => q.id === id);
     
-    // If activating the question, start 60 second timer
+    // Clear any existing timer for this question using ref (synchronous)
+    if (timerIntervalsRef.current[id]) {
+      clearInterval(timerIntervalsRef.current[id]);
+      delete timerIntervalsRef.current[id];
+      setQuestionTimers(prev => ({ ...prev, [id]: 0 }));
+    }
+    
+    // THEN: Make API call
+    await fetch(`${API_URL}/admin/questions/${id}/toggle`, { 
+      method: 'PATCH',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    
+    // FINALLY: If activating, start new timer
     if (!question.is_active) {
       setQuestionTimers(prev => ({ ...prev, [id]: 60 }));
       
@@ -161,18 +289,13 @@ function AdminDashboard() {
           const newTime = (prev[id] || 0) - 1;
           if (newTime <= 0) {
             clearInterval(timerInterval);
-            setTimerIntervals(prev => {
-              const newIntervals = { ...prev };
-              delete newIntervals[id];
-              return newIntervals;
-            });
+            delete timerIntervalsRef.current[id];
             // Auto-stop the question
             fetch(`${API_URL}/admin/questions/${id}/toggle`, { 
               method: 'PATCH',
               headers: { 'Authorization': `Bearer ${token}` }
             }).then(() => {
               fetchQuestions();
-              // Force re-render by updating expanded question state
               if (expandedQuestion === `history-${id}`) {
                 setExpandedQuestion(null);
                 setTimeout(() => setExpandedQuestion(`history-${id}`), 100);
@@ -188,30 +311,62 @@ function AdminDashboard() {
         });
       }, 1000);
       
-      // Store interval reference
-      setTimerIntervals(prev => ({ ...prev, [id]: timerInterval }));
-    } else {
-      // If stopping manually, clear timer
-      if (timerIntervals[id]) {
-        clearInterval(timerIntervals[id]);
-        setTimerIntervals(prev => {
-          const newIntervals = { ...prev };
-          delete newIntervals[id];
-          return newIntervals;
-        });
-      }
-      setQuestionTimers(prev => ({ ...prev, [id]: 0 }));
+      timerIntervalsRef.current[id] = timerInterval;
     }
     
-    await fetch(`${API_URL}/admin/questions/${id}/toggle`, { 
-      method: 'PATCH',
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    fetchQuestions();
+    await fetchQuestions();
+    setTogglingQuestions(prev => ({ ...prev, [id]: false }));
   };
 
-  const toggleSubQuestion = async (subId) => {
+  const toggleSubQuestion = async (subId, questionId) => {
+    const subQuestion = subQuestions[questionId]?.find(sq => sq.id === subId);
+    
+    // Clear any existing timer for this sub-question
+    if (subTimerIntervalsRef.current[subId]) {
+      clearInterval(subTimerIntervalsRef.current[subId]);
+      delete subTimerIntervalsRef.current[subId];
+      setSubQuestionTimers(prev => ({ ...prev, [subId]: 0 }));
+    }
+    
+    // Toggle the sub-question
     await fetch(`${API_URL}/admin/sub-questions/${subId}/toggle`, { method: 'PATCH' });
+    
+    // If activating, start timer
+    if (!subQuestion.is_active) {
+      setSubQuestionTimers(prev => ({ ...prev, [subId]: 60 }));
+      
+      const timerInterval = setInterval(() => {
+        setSubQuestionTimers(prev => {
+          const newTime = (prev[subId] || 0) - 1;
+          if (newTime <= 0) {
+            clearInterval(timerInterval);
+            delete subTimerIntervalsRef.current[subId];
+            // Auto-stop the sub-question
+            fetch(`${API_URL}/admin/sub-questions/${subId}/toggle`, { 
+              method: 'PATCH'
+            }).then(() => {
+              fetchQuestions();
+              setToast({
+                message: 'Sub-question automatically stopped after 60 seconds!',
+                type: 'info'
+              });
+            });
+            return { ...prev, [subId]: 0 };
+          }
+          return { ...prev, [subId]: newTime };
+        });
+      }, 1000);
+      
+      subTimerIntervalsRef.current[subId] = timerInterval;
+    }
+    
+    // Fetch fresh results after toggle
+    const resResults = await fetch(`${API_URL}/questions/${questionId}/results`);
+    const results = await resResults.json();
+    if (results.subResults) {
+      setSubResults((prev) => ({ ...prev, [questionId]: results.subResults }));
+    }
+    
     fetchQuestions();
   };
 
@@ -226,6 +381,117 @@ function AdminDashboard() {
       type: 'success'
     });
     fetchQuestions();
+  };
+
+  const clearHistory = async (id) => {
+    const token = localStorage.getItem('adminToken');
+    try {
+      const res = await fetch(`${API_URL}/admin/questions/${id}/history`, { 
+        method: 'DELETE',
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      const data = await res.json();
+      
+      if (res.ok) {
+        const mainDeleted = data.deletedCount || 0;
+        const subDeleted = data.subVotesDeleted || 0;
+        const totalDeleted = mainDeleted + subDeleted;
+        
+        setToast({
+          message: `Vote history cleared! (${totalDeleted} vote${totalDeleted !== 1 ? 's' : ''} removed)`,
+          type: 'success'
+        });
+        
+        // Refresh to show updated results
+        fetchQuestions();
+        // Force refresh vote history if expanded
+        if (expandedQuestion === `history-${id}`) {
+          setExpandedQuestion(null);
+          setTimeout(() => setExpandedQuestion(`history-${id}`), 100);
+        }
+      } else {
+        setToast({
+          message: data.error || 'Failed to clear history',
+          type: 'error'
+        });
+      }
+    } catch (error) {
+      console.error('Clear history error:', error);
+      setToast({
+        message: 'Failed to clear history: ' + error.message,
+        type: 'error'
+      });
+    }
+  };
+
+  const deleteProject = async (projectId) => {
+    const token = localStorage.getItem('adminToken');
+    try {
+      const res = await fetch(`${API_URL}/admin/projects/${projectId}`, { 
+        method: 'DELETE',
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (res.ok) {
+        setToast({
+          message: 'Project and all its questions deleted successfully!',
+          type: 'success'
+        });
+        fetchQuestions();
+      } else {
+        const data = await res.json();
+        setToast({
+          message: data.error || 'Failed to delete project',
+          type: 'error'
+        });
+      }
+    } catch (error) {
+      setToast({
+        message: 'Failed to delete project: ' + error.message,
+        type: 'error'
+      });
+    }
+  };
+
+  const updateProject = async () => {
+    const token = localStorage.getItem('adminToken');
+    try {
+      const res = await fetch(`${API_URL}/admin/projects/${editingProject}`, { 
+        method: 'PUT',
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(editProjectData)
+      });
+      
+      if (res.ok) {
+        setToast({
+          message: 'Project updated successfully!',
+          type: 'success'
+        });
+        setEditingProject(null);
+        fetchQuestions();
+      } else {
+        const data = await res.json();
+        setToast({
+          message: data.error || 'Failed to update project',
+          type: 'error'
+        });
+      }
+    } catch (error) {
+      setToast({
+        message: 'Failed to update project: ' + error.message,
+        type: 'error'
+      });
+    }
   };
 
   const createSession = async () => {
@@ -608,35 +874,12 @@ function AdminDashboard() {
               <span style={{ fontSize: '18px' }}>📋</span>
               <span>Share Link</span>
             </button>
-            <button
-              onClick={() => setShowLogoutModal(true)}
-              style={{
-                width: '100%',
-                padding: '12px',
-                backgroundColor: 'transparent',
-                color: '#e74c3c',
-                border: 'none',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                fontSize: '14px',
-                fontWeight: '600',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                transition: 'all 0.3s'
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#fee'}
-              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-            >
-              <span style={{ fontSize: '18px' }}>🚪</span>
-              <span>Logout</span>
-            </button>
           </div>
         )}
       </div>
 
-      {/* Logout Confirmation Modal */}
-      {showLogoutModal && (
+      {/* Edit Project Modal */}
+      {editingProject && (
         <div style={{
           position: 'fixed',
           top: 0,
@@ -647,67 +890,124 @@ function AdminDashboard() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          zIndex: 9999,
-          padding: '20px'
-        }} onClick={() => setShowLogoutModal(false)}>
+          zIndex: 9999
+        }} onClick={() => setEditingProject(null)}>
           <div style={{
             backgroundColor: 'white',
-            padding: '30px',
+            padding: 'clamp(20px, 5vw, 30px)',
             borderRadius: '16px',
-            maxWidth: '400px',
-            width: '100%',
-            textAlign: 'center',
-            boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
+            maxWidth: '500px',
+            width: '90%',
+            maxHeight: '90vh',
+            overflowY: 'auto'
           }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ fontSize: '50px', marginBottom: '15px' }}>⚠️</div>
-            <h2 style={{ color: '#2c3e50', marginBottom: '10px', fontSize: '22px' }}>
-              Confirm Logout
-            </h2>
-            <p style={{ color: '#7f8c8d', marginBottom: '25px', fontSize: '14px' }}>
-              Are you sure you want to logout?
-            </p>
+            <h2 style={{ marginBottom: '20px', color: '#2c3e50', fontSize: 'clamp(18px, 4vw, 22px)' }}>Edit Project</h2>
+            
+            <input
+              type="text"
+              placeholder="Project Title"
+              value={editProjectData.title}
+              onChange={(e) => setEditProjectData({...editProjectData, title: e.target.value})}
+              style={{
+                width: '100%',
+                padding: '12px',
+                marginBottom: '15px',
+                borderRadius: '8px',
+                border: '2px solid #e0e0e0',
+                fontSize: '15px',
+                boxSizing: 'border-box'
+              }}
+            />
+            
+            <textarea
+              placeholder="Description (optional)"
+              value={editProjectData.description}
+              onChange={(e) => setEditProjectData({...editProjectData, description: e.target.value})}
+              style={{
+                width: '100%',
+                padding: '12px',
+                marginBottom: '15px',
+                borderRadius: '8px',
+                border: '2px solid #e0e0e0',
+                fontSize: '15px',
+                minHeight: '80px',
+                boxSizing: 'border-box'
+              }}
+            />
+            
+            <div style={{ position: 'relative', marginBottom: '20px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#2c3e50', fontSize: '14px' }}>
+                📅 Project Date
+              </label>
+              <input
+                type="date"
+                value={editProjectData.date}
+                onChange={(e) => setEditProjectData({...editProjectData, date: e.target.value})}
+                style={{
+                  width: '100%',
+                  padding: '12px 12px 12px 40px',
+                  borderRadius: '8px',
+                  border: '2px solid #e0e0e0',
+                  fontSize: '15px',
+                  boxSizing: 'border-box',
+                  cursor: 'pointer',
+                  transition: 'all 0.3s'
+                }}
+                onFocus={(e) => {
+                  e.target.style.borderColor = '#667eea';
+                  e.target.showPicker && e.target.showPicker();
+                }}
+                onBlur={(e) => e.target.style.borderColor = '#e0e0e0'}
+              />
+              <span style={{
+                position: 'absolute',
+                left: '12px',
+                top: '42px',
+                fontSize: '18px',
+                pointerEvents: 'none'
+              }}>
+                📅
+              </span>
+            </div>
+            
             <div style={{ display: 'flex', gap: '10px' }}>
               <button
-                onClick={() => setShowLogoutModal(false)}
+                onClick={updateProject}
+                disabled={!editProjectData.title}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  backgroundColor: editProjectData.title ? '#27ae60' : '#bdc3c7',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: editProjectData.title ? 'pointer' : 'not-allowed',
+                  fontWeight: '600'
+                }}
+              >
+                Update
+              </button>
+              <button
+                onClick={() => setEditingProject(null)}
                 style={{
                   flex: 1,
                   padding: '12px',
                   backgroundColor: '#95a5a6',
                   color: 'white',
                   border: 'none',
-                  borderRadius: '10px',
+                  borderRadius: '8px',
                   cursor: 'pointer',
-                  fontSize: '15px',
                   fontWeight: '600'
                 }}
               >
                 Cancel
-              </button>
-              <button
-                onClick={() => {
-                  localStorage.clear();
-                  navigate('/admin/login');
-                }}
-                style={{
-                  flex: 1,
-                  padding: '12px',
-                  backgroundColor: '#e74c3c',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '10px',
-                  cursor: 'pointer',
-                  fontSize: '15px',
-                  fontWeight: '600'
-                }}
-              >
-                Logout
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {questions.length === 0 ? (
+      {questions.length === 0 && projects.length === 0 ? (
         <div style={{
           backgroundColor: 'white',
           padding: 'clamp(30px, 8vw, 60px)',
@@ -715,25 +1015,26 @@ function AdminDashboard() {
           boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
           textAlign: 'center'
         }}>
+          <div style={{ fontSize: '60px', marginBottom: '20px' }}>📁</div>
           <h2 style={{ 
             color: '#7f8c8d', 
             marginBottom: 'clamp(15px, 3vw, 20px)',
             fontSize: 'clamp(18px, 4vw, 24px)'
           }}>
-            No Questions Yet
+            No Projects Yet
           </h2>
           <p style={{ 
             color: '#95a5a6', 
             fontSize: 'clamp(14px, 3vw, 16px)', 
             marginBottom: 'clamp(20px, 4vw, 30px)' 
           }}>
-            Create your first question!
+            Create a project first, then add questions to it!
           </p>
           <button
             onClick={() => navigate('/admin/create')}
             style={{
               padding: 'clamp(12px, 3vw, 15px) clamp(20px, 5vw, 30px)',
-              backgroundColor: '#27ae60',
+              backgroundColor: '#667eea',
               color: 'white',
               border: 'none',
               borderRadius: '8px',
@@ -742,7 +1043,7 @@ function AdminDashboard() {
               fontWeight: 'bold',
             }}
           >
-            ➕ Create First Question
+            ➕ Create Project & Question
           </button>
         </div>
       ) : (
@@ -754,7 +1055,144 @@ function AdminDashboard() {
           }}>
             All Questions
           </h2>
-          {questions.map((q) => (
+          {(() => {
+            // Start with all projects
+            const grouped = {};
+            
+            projects.forEach(p => {
+              grouped[p.id] = {
+                title: p.title,
+                date: p.date,
+                description: p.description,
+                questions: []
+              };
+            });
+            
+            // Add questions to their projects
+            questions.forEach(q => {
+              if (q.project_id && grouped[q.project_id]) {
+                grouped[q.project_id].questions.push(q);
+              }
+            });
+            
+            return Object.entries(grouped)
+              .map(([projectId, projectData]) => (
+              <div key={projectId} style={{ marginBottom: '20px' }}>
+                <div 
+                  onClick={() => setExpandedProjects(prev => ({ ...prev, [projectId]: !prev[projectId] }))}
+                  style={{
+                    padding: '20px 25px',
+                    backgroundColor: 'white',
+                    borderRadius: '12px',
+                    marginBottom: expandedProjects[projectId] ? '15px' : '0',
+                    cursor: 'pointer',
+                    boxShadow: expandedProjects[projectId] ? '0 4px 12px rgba(102, 126, 234, 0.3)' : '0 2px 8px rgba(0,0,0,0.1)',
+                    transition: 'all 0.3s',
+                    border: expandedProjects[projectId] ? '2px solid #667eea' : '2px solid transparent'
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '15px' }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '15px', flex: 1 }}>
+                      <span style={{ fontSize: '32px', lineHeight: 1 }}>📁</span>
+                      <div style={{ flex: 1 }}>
+                        <h3 style={{ margin: '0 0 8px 0', fontSize: '18px', fontWeight: '700', color: '#2c3e50', lineHeight: 1.3 }}>
+                          {projectData.title}
+                        </h3>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                          {projectData.date && (
+                            <span style={{ fontSize: '13px', color: '#7f8c8d', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              📅 {new Date(projectData.date).toLocaleDateString()}
+                            </span>
+                          )}
+                          <span style={{ 
+                            padding: '4px 10px',
+                            backgroundColor: '#e8eaf6',
+                            borderRadius: '12px',
+                            fontSize: '12px',
+                            fontWeight: '600',
+                            color: '#667eea'
+                          }}>
+                            {projectData.questions.length} Question{projectData.questions.length !== 1 ? 's' : ''}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      {projectId !== 'no-project' && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingProject(projectId);
+                            setEditProjectData({
+                              title: projectData.title,
+                              description: projectData.description || '',
+                              date: projectData.date ? new Date(projectData.date).toISOString().split('T')[0] : ''
+                            });
+                          }}
+                          style={{
+                            padding: '8px 12px',
+                            backgroundColor: 'transparent',
+                            color: '#f39c12',
+                            border: '1px solid #f39c12',
+                            borderRadius: '8px',
+                            cursor: 'pointer',
+                            fontSize: '14px',
+                            fontWeight: '600',
+                            transition: 'all 0.3s',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = '#f39c12';
+                            e.currentTarget.style.color = 'white';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = 'transparent';
+                            e.currentTarget.style.color = '#f39c12';
+                          }}
+                        >
+                          ✏️
+                        </button>
+                      )}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeleteProjectModal({ id: projectId, title: projectData.title });
+                        }}
+                        style={{
+                          padding: '8px 12px',
+                          backgroundColor: 'transparent',
+                          color: '#e74c3c',
+                          border: '1px solid #e74c3c',
+                          borderRadius: '8px',
+                          cursor: 'pointer',
+                          fontSize: '14px',
+                          fontWeight: '600',
+                          transition: 'all 0.3s',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = '#e74c3c';
+                          e.currentTarget.style.color = 'white';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = 'transparent';
+                          e.currentTarget.style.color = '#e74c3c';
+                        }}
+                      >
+                        🗑️
+                      </button>
+                      <span style={{ fontSize: '18px', color: '#667eea', transition: 'transform 0.3s', transform: expandedProjects[projectId] ? 'rotate(180deg)' : 'rotate(0deg)', marginLeft: '4px' }}>
+                        ▼
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                
+                {expandedProjects[projectId] && projectData.questions.map((q) => (
             <div
               key={q.id}
               style={{
@@ -769,6 +1207,9 @@ function AdminDashboard() {
               <div style={{ marginBottom: '20px' }}>
                 <div style={{ marginBottom: '15px' }}>
                   <h3 style={{ margin: '0 0 10px 0', color: '#2c3e50', fontSize: '20px' }}>
+                    <span style={{ color: '#667eea', fontWeight: '800', marginRight: '8px' }}>
+                      Q{q.question_number}.
+                    </span>
                     {q.heading}
                     {q.is_active && (
                       <>
@@ -811,12 +1252,13 @@ function AdminDashboard() {
                 }}>
                   <button
                     onClick={() => toggleQuestion(q.id)}
+                    disabled={togglingQuestions[q.id]}
                     style={{
                       padding: '14px 20px',
-                      backgroundColor: q.is_active ? '#e74c3c' : '#27ae60',
+                      backgroundColor: togglingQuestions[q.id] ? '#95a5a6' : (q.is_active ? '#e74c3c' : '#27ae60'),
                       color: 'white',
                       border: 'none',
-                      cursor: 'pointer',
+                      cursor: togglingQuestions[q.id] ? 'not-allowed' : 'pointer',
                       borderRadius: '12px',
                       fontWeight: '700',
                       fontSize: '15px',
@@ -825,13 +1267,14 @@ function AdminDashboard() {
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      gap: '8px'
+                      gap: '8px',
+                      opacity: togglingQuestions[q.id] ? 0.7 : 1
                     }}
-                    onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
+                    onMouseEnter={(e) => !togglingQuestions[q.id] && (e.currentTarget.style.transform = 'translateY(-2px)')}
                     onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
                   >
-                    <span style={{ fontSize: '18px' }}>{q.is_active ? '⏸' : '▶'}</span>
-                    {q.is_active ? 'Stop' : 'Activate'}
+                    <span style={{ fontSize: '18px' }}>{togglingQuestions[q.id] ? '⏳' : (q.is_active ? '⏸' : '▶')}</span>
+                    {togglingQuestions[q.id] ? 'Wait...' : (q.is_active ? 'Stop' : 'Activate')}
                   </button>
                   
                   <button
@@ -927,6 +1370,60 @@ function AdminDashboard() {
                     <span style={{ fontSize: '18px' }}>🗑️</span>
                     Delete
                   </button>
+                  
+                  <button
+                    onClick={async () => {
+                      if (q.is_active) return;
+                      
+                      // Check if there's any history first
+                      const token = localStorage.getItem('adminToken');
+                      try {
+                        const checkRes = await fetch(`${API_URL}/admin/questions/${q.id}/history`, {
+                          headers: { 'Authorization': `Bearer ${token}` }
+                        });
+                        const historyData = await checkRes.json();
+                        
+                        // Check if history is empty
+                        if (historyData.mainVotes?.length === 0 && historyData.subVotes?.length === 0) {
+                          setToast({
+                            message: 'Nothing to clear - no vote history found!',
+                            type: 'info'
+                          });
+                          return;
+                        }
+                        
+                        // If history exists, show modal
+                        setClearHistoryModal({ id: q.id, heading: q.heading });
+                      } catch (error) {
+                        console.error('Error checking history:', error);
+                        // If check fails, show modal anyway
+                        setClearHistoryModal({ id: q.id, heading: q.heading });
+                      }
+                    }}
+                    disabled={q.is_active}
+                    style={{
+                      padding: '14px 20px',
+                      backgroundColor: q.is_active ? '#bdc3c7' : '#9b59b6',
+                      color: 'white',
+                      border: 'none',
+                      cursor: q.is_active ? 'not-allowed' : 'pointer',
+                      borderRadius: '12px',
+                      fontWeight: '700',
+                      fontSize: '15px',
+                      boxShadow: q.is_active ? 'none' : '0 4px 12px rgba(155, 89, 182, 0.3)',
+                      transition: 'all 0.3s',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                      opacity: q.is_active ? 0.6 : 1
+                    }}
+                    onMouseEnter={(e) => !q.is_active && (e.currentTarget.style.transform = 'translateY(-2px)')}
+                    onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+                  >
+                    <span style={{ fontSize: '18px' }}>🔄</span>
+                    Clear History
+                  </button>
                 </div>
               </div>
 
@@ -1003,38 +1500,122 @@ function AdminDashboard() {
                             backgroundColor: subQ.is_active ? '#f4ecf7' : '#fafafa',
                           }}
                         >
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ fontWeight: 'bold', color: '#2c3e50' }}>
+                          {/* Sub-question text and badges */}
+                          <div style={{ marginBottom: '12px' }}>
+                            <div style={{ 
+                              fontWeight: 'bold', 
+                              color: '#2c3e50',
+                              fontSize: 'clamp(14px, 3.5vw, 16px)',
+                              marginBottom: '8px',
+                              wordBreak: 'break-word'
+                            }}>
                               {idx + 1}. {subQ.sub_question_text}
-                              {subQ.is_active && (
+                            </div>
+                            {subQ.is_active && (
+                              <div style={{ 
+                                display: 'flex', 
+                                gap: '8px', 
+                                flexWrap: 'wrap',
+                                alignItems: 'center'
+                              }}>
                                 <span style={{
-                                  marginLeft: '10px',
                                   padding: '4px 10px',
                                   backgroundColor: '#9b59b6',
                                   color: 'white',
                                   borderRadius: '12px',
                                   fontSize: '11px',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px'
                                 }}>
                                   🔴 LIVE
                                 </span>
-                              )}
-                            </span>
-                            <button
-                              onClick={() => toggleSubQuestion(subQ.id)}
-                              style={{
-                                padding: '8px 16px',
-                                backgroundColor: subQ.is_active ? '#e74c3c' : '#9b59b6',
-                                color: 'white',
-                                border: 'none',
-                                cursor: 'pointer',
-                                borderRadius: '6px',
-                                fontSize: '13px',
-                                fontWeight: 'bold',
-                              }}
-                            >
-                              {subQ.is_active ? '⏸ Stop' : '▶ Raise'}
-                            </button>
+                                {subQuestionTimers[subQ.id] > 0 && (
+                                  <span style={{
+                                    padding: '4px 10px',
+                                    backgroundColor: subQuestionTimers[subQ.id] <= 10 ? '#e74c3c' : '#3498db',
+                                    color: 'white',
+                                    borderRadius: '12px',
+                                    fontSize: '11px',
+                                    fontWeight: 'bold',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px'
+                                  }}>
+                                    ⏱ {subQuestionTimers[subQ.id]}s
+                                  </span>
+                                )}
+                              </div>
+                            )}
                           </div>
+                          
+                          {/* Action button */}
+                          <button
+                            onClick={() => toggleSubQuestion(subQ.id, q.id)}
+                            style={{
+                              width: '100%',
+                              padding: 'clamp(10px, 2.5vw, 12px) clamp(14px, 3vw, 16px)',
+                              backgroundColor: subQ.is_active ? '#e74c3c' : '#9b59b6',
+                              color: 'white',
+                              border: 'none',
+                              cursor: 'pointer',
+                              borderRadius: '8px',
+                              fontSize: 'clamp(13px, 3vw, 14px)',
+                              fontWeight: 'bold',
+                              marginBottom: subQ.is_active ? '15px' : '0',
+                              transition: 'all 0.3s',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '6px'
+                            }}
+                          >
+                            <span style={{ fontSize: '16px' }}>{subQ.is_active ? '⏸' : '▶'}</span>
+                            {subQ.is_active ? 'Stop' : 'Raise'}
+                          </button>
+                          
+                          {subQ.is_active && subResults[q.id] && (() => {
+                            const subResult = subResults[q.id].find(sr => sr.id === subQ.id);
+                            if (!subResult || !subResult.results) return null;
+                            
+                            return (
+                              <div style={{
+                                marginTop: '10px',
+                                padding: '15px',
+                                backgroundColor: 'white',
+                                borderRadius: '8px',
+                                border: '1px solid #e0e0e0'
+                              }}>
+                                <h5 style={{ margin: '0 0 10px 0', color: '#9b59b6', fontSize: '13px' }}>📊 Live Results</h5>
+                                {subResult.results.map((opt, optIdx) => (
+                                  <div key={opt.id} style={{ marginBottom: '10px' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px', fontSize: '13px' }}>
+                                      <span style={{ fontWeight: '600' }}>
+                                        {String.fromCharCode(65 + optIdx)}. {opt.option_text}
+                                      </span>
+                                      <span style={{ fontWeight: 'bold', color: '#9b59b6' }}>
+                                        {opt.percentage}% ({opt.votes})
+                                      </span>
+                                    </div>
+                                    <div style={{
+                                      width: '100%',
+                                      height: '20px',
+                                      backgroundColor: '#f0f0f0',
+                                      borderRadius: '10px',
+                                      overflow: 'hidden'
+                                    }}>
+                                      <div style={{
+                                        width: `${opt.percentage}%`,
+                                        height: '100%',
+                                        backgroundColor: '#9b59b6',
+                                        transition: 'width 0.5s ease',
+                                      }}></div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            );
+                          })()}
                         </div>
                       ))}
                     </div>
@@ -1043,11 +1624,14 @@ function AdminDashboard() {
               )}
             </div>
           ))}
+              </div>
+            ));
+          })()}
         </div>
       )}
-      
-      {/* Logout Confirmation Modal */}
-      {showLogoutModal && (
+
+      {/* Delete Project Confirmation Modal */}
+      {deleteProjectModal && (
         <div style={{
           position: 'fixed',
           top: 0,
@@ -1060,58 +1644,202 @@ function AdminDashboard() {
           justifyContent: 'center',
           zIndex: 9999,
           padding: '20px'
-        }} onClick={() => setShowLogoutModal(false)}>
+        }} onClick={() => setDeleteProjectModal(null)}>
           <div style={{
             backgroundColor: 'white',
-            padding: '30px',
+            padding: 'clamp(25px, 5vw, 30px)',
             borderRadius: '16px',
-            maxWidth: '400px',
+            maxWidth: '450px',
             width: '100%',
             textAlign: 'center',
             boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
           }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ fontSize: '50px', marginBottom: '15px' }}>⚠️</div>
-            <h2 style={{ color: '#2c3e50', marginBottom: '10px', fontSize: '22px' }}>
-              Confirm Logout
+            <div style={{ fontSize: 'clamp(45px, 10vw, 55px)', marginBottom: '15px' }}>🗑️</div>
+            <h2 style={{ 
+              color: '#2c3e50', 
+              marginBottom: '10px', 
+              fontSize: 'clamp(18px, 4vw, 22px)',
+              fontWeight: '700'
+            }}>
+              Delete Project?
             </h2>
-            <p style={{ color: '#7f8c8d', marginBottom: '25px', fontSize: '14px' }}>
-              Are you sure you want to logout?
+            <p style={{ 
+              color: '#7f8c8d', 
+              marginBottom: '15px', 
+              fontSize: 'clamp(13px, 3vw, 14px)',
+              lineHeight: '1.5'
+            }}>
+              Are you sure you want to delete
+            </p>
+            <p style={{
+              color: '#e74c3c',
+              fontWeight: '700',
+              fontSize: 'clamp(15px, 3.5vw, 17px)',
+              marginBottom: '15px',
+              padding: '10px',
+              backgroundColor: '#fee',
+              borderRadius: '8px',
+              wordBreak: 'break-word'
+            }}>
+              "{deleteProjectModal.title}"
+            </p>
+            <p style={{ 
+              color: '#e74c3c', 
+              marginBottom: '25px', 
+              fontSize: 'clamp(12px, 2.8vw, 13px)',
+              fontWeight: '600'
+            }}>
+              ⚠️ This will delete all questions in this project!
             </p>
             <div style={{ display: 'flex', gap: '10px' }}>
               <button
-                onClick={() => setShowLogoutModal(false)}
+                onClick={() => setDeleteProjectModal(null)}
                 style={{
                   flex: 1,
-                  padding: '12px',
+                  padding: 'clamp(10px, 2.5vw, 12px)',
                   backgroundColor: '#95a5a6',
                   color: 'white',
                   border: 'none',
                   borderRadius: '10px',
                   cursor: 'pointer',
-                  fontSize: '15px',
-                  fontWeight: '600'
+                  fontSize: 'clamp(14px, 3vw, 15px)',
+                  fontWeight: '600',
+                  transition: 'all 0.3s'
                 }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#7f8c8d'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#95a5a6'}
               >
                 Cancel
               </button>
               <button
                 onClick={() => {
-                  localStorage.clear();
-                  navigate('/admin/login');
+                  deleteProject(deleteProjectModal.id);
+                  setDeleteProjectModal(null);
                 }}
                 style={{
                   flex: 1,
-                  padding: '12px',
+                  padding: 'clamp(10px, 2.5vw, 12px)',
                   backgroundColor: '#e74c3c',
                   color: 'white',
                   border: 'none',
                   borderRadius: '10px',
                   cursor: 'pointer',
-                  fontSize: '15px',
-                  fontWeight: '600'
+                  fontSize: 'clamp(14px, 3vw, 15px)',
+                  fontWeight: '600',
+                  transition: 'all 0.3s'
                 }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#c0392b'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#e74c3c'}
               >
-                Logout
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Clear History Confirmation Modal */}
+      {clearHistoryModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.7)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '20px'
+        }} onClick={() => setClearHistoryModal(null)}>
+          <div style={{
+            backgroundColor: 'white',
+            padding: 'clamp(25px, 5vw, 30px)',
+            borderRadius: '16px',
+            maxWidth: '450px',
+            width: '100%',
+            textAlign: 'center',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
+          }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ fontSize: 'clamp(45px, 10vw, 55px)', marginBottom: '15px' }}>🔄</div>
+            <h2 style={{ 
+              color: '#2c3e50', 
+              marginBottom: '10px', 
+              fontSize: 'clamp(18px, 4vw, 22px)',
+              fontWeight: '700'
+            }}>
+              Clear Vote History?
+            </h2>
+            <p style={{ 
+              color: '#7f8c8d', 
+              marginBottom: '15px', 
+              fontSize: 'clamp(13px, 3vw, 14px)',
+              lineHeight: '1.5'
+            }}>
+              Are you sure you want to clear all vote history for
+            </p>
+            <p style={{
+              color: '#9b59b6',
+              fontWeight: '700',
+              fontSize: 'clamp(15px, 3.5vw, 17px)',
+              marginBottom: '15px',
+              padding: '10px',
+              backgroundColor: '#f4ecf7',
+              borderRadius: '8px',
+              wordBreak: 'break-word'
+            }}>
+              "{clearHistoryModal.heading}"
+            </p>
+            <p style={{ 
+              color: '#e74c3c', 
+              marginBottom: '25px', 
+              fontSize: 'clamp(12px, 2.8vw, 13px)',
+              fontWeight: '600'
+            }}>
+              ⚠️ This action cannot be undone!
+            </p>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={() => setClearHistoryModal(null)}
+                style={{
+                  flex: 1,
+                  padding: 'clamp(10px, 2.5vw, 12px)',
+                  backgroundColor: '#95a5a6',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '10px',
+                  cursor: 'pointer',
+                  fontSize: 'clamp(14px, 3vw, 15px)',
+                  fontWeight: '600',
+                  transition: 'all 0.3s'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#7f8c8d'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#95a5a6'}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  clearHistory(clearHistoryModal.id);
+                  setClearHistoryModal(null);
+                }}
+                style={{
+                  flex: 1,
+                  padding: 'clamp(10px, 2.5vw, 12px)',
+                  backgroundColor: '#9b59b6',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '10px',
+                  cursor: 'pointer',
+                  fontSize: 'clamp(14px, 3vw, 15px)',
+                  fontWeight: '600',
+                  transition: 'all 0.3s'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#8e44ad'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#9b59b6'}
+              >
+                Clear History
               </button>
             </div>
           </div>

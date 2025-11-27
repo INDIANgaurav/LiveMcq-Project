@@ -146,19 +146,26 @@ This project is open source and available under the MIT License.
 ### Frontend (Vercel)
 1. Push code to GitHub
 2. Import project in Vercel
-3. Add environment variable: `VITE_API_URL=<your-backend-url>`
-4. Deploy
+3. Set root directory to `frontend`
+4. Add environment variable: 
+   - `VITE_API_URL=https://livemcq-project.onrender.com`
+5. Deploy
 
-### Backend (Render/Railway)
+### Backend (Render)
 1. Create new Web Service
 2. Connect GitHub repository
-3. Add environment variables:
-   - `DATABASE_URL`
-   - `JWT_SECRET`
+3. Set root directory to `backend`
+4. Add environment variables:
+   - `DATABASE_URL=<your-postgres-url>`
+   - `JWT_SECRET=<your-secret-key>`
    - `FRONTEND_URL=https://live-mcq-tool.vercel.app`
-4. Deploy
+   - `PORT=5000`
+5. Deploy
 
-**Live Demo**: [https://live-mcq-tool.vercel.app](https://live-mcq-tool.vercel.app)
+## 🌐 Live Demo
+
+**Frontend**: [https://live-mcq-tool.vercel.app](https://live-mcq-tool.vercel.app)  
+**Backend API**: [https://livemcq-project.onrender.com](https://livemcq-project.onrender.com)
 
 ## 👨‍💻 Author
 

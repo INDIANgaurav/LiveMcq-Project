@@ -9,6 +9,7 @@ function AdminLogin() {
     email: '',
     password: ''
   });
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const navigate = useNavigate();
@@ -156,22 +157,44 @@ function AdminLogin() {
             }}>
               Password *
             </label>
-            <input
-              type="password"
-              placeholder="Enter your password"
-              value={formData.password}
-              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-              required
-              minLength={6}
-              style={{
-                width: '100%',
-                padding: '15px',
-                fontSize: '16px',
-                border: '2px solid #e0e0e0',
-                borderRadius: '12px',
-                boxSizing: 'border-box',
-              }}
-            />
+            <div style={{ position: 'relative' }}>
+              <input
+                type={showPassword ? "text" : "password"}
+                placeholder="Enter your password"
+                value={formData.password}
+                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                required
+                minLength={6}
+                style={{
+                  width: '100%',
+                  padding: '15px 50px 15px 15px',
+                  fontSize: '16px',
+                  border: '2px solid #e0e0e0',
+                  borderRadius: '12px',
+                  boxSizing: 'border-box',
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                style={{
+                  position: 'absolute',
+                  right: '15px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontSize: '20px',
+                  padding: '5px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                {showPassword ? '🙈' : '👁️'}
+              </button>
+            </div>
             {!isLogin && (
               <p style={{ fontSize: '12px', color: '#7f8c8d', marginTop: '5px' }}>
                 Minimum 6 characters

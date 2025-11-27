@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Toast from './Toast';
+import ProjectSelector from './ProjectSelector';
 import { API_BASE as API_URL } from '../config';
 
 function CreateQuestion() {
@@ -11,11 +12,17 @@ function CreateQuestion() {
   const [subQuestions, setSubQuestions] = useState([
     { text: '', options: ['', '', '', ''] }
   ]);
+  const [projectId, setProjectId] = useState('');
   const [toast, setToast] = useState(null);
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    if (!projectId) {
+      setToast({ message: 'Please select or create a project first!', type: 'warning' });
+      return;
+    }
 
     if (questionType === 'simple') {
       const validOptions = options.filter((opt) => opt.trim());
@@ -31,7 +38,7 @@ function CreateQuestion() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ heading, description, options: validOptions }),
+        body: JSON.stringify({ heading, description, options: validOptions, projectId }),
       });
     } else {
       const validMainOptions = options.filter((opt) => opt.trim());
@@ -58,6 +65,7 @@ function CreateQuestion() {
         body: JSON.stringify({ 
           heading, 
           description, 
+          projectId,
           options: validMainOptions.length > 0 ? validMainOptions : undefined,
           subQuestions: validSubQuestions.length > 0 ? validSubQuestions : undefined
         }),
@@ -88,6 +96,11 @@ function CreateQuestion() {
         </h1>
 
         <form onSubmit={handleSubmit}>
+          <ProjectSelector 
+            onProjectSelect={setProjectId}
+            selectedProjectId={projectId}
+          />
+          
           <div style={{ marginBottom: '20px' }}>
             <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold', color: '#2c3e50' }}>
               Question Heading *

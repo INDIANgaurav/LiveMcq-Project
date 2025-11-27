@@ -7,12 +7,19 @@ function Navbar() {
   const location = useLocation();
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   const [showMenu, setShowMenu] = useState(false);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth <= 768);
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  // Reset modal state on route change
+  useEffect(() => {
+    setShowLogoutModal(false);
+    setShowMenu(false);
+  }, [location.pathname]);
 
   const isAdminLoggedIn = localStorage.getItem('adminToken');
   const isStudentSession = location.pathname.startsWith('/session/');
@@ -23,18 +30,19 @@ function Navbar() {
   }
 
   return (
-    <div style={{
-      background: 'linear-gradient(135deg, rgba(102, 126, 234, 0.85) 0%, rgba(118, 75, 162, 0.85) 100%)',
-      backdropFilter: 'blur(20px)',
-      WebkitBackdropFilter: 'blur(20px)',
-      padding: isMobile ? '12px 15px' : '15px 30px',
-      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
-      border: '1px solid rgba(255, 255, 255, 0.2)',
-      position: 'sticky',
-      top: 0,
-      zIndex: 10000,
-      pointerEvents: 'auto'
-    }}>
+    <>
+      <div style={{
+        background: 'linear-gradient(135deg, rgba(102, 126, 234, 0.85) 0%, rgba(118, 75, 162, 0.85) 100%)',
+        backdropFilter: 'blur(20px)',
+        WebkitBackdropFilter: 'blur(20px)',
+        padding: isMobile ? '12px 15px' : '15px 30px',
+        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+        border: '1px solid rgba(255, 255, 255, 0.2)',
+        position: 'sticky',
+        top: 0,
+        zIndex: 10000,
+        pointerEvents: 'auto'
+      }}>
       <div style={{
         display: 'flex',
         justifyContent: 'space-between',
@@ -139,19 +147,7 @@ function Navbar() {
             )}
             {isAdminLoggedIn && (
               <button
-                onClick={async () => {
-                  const token = localStorage.getItem('adminToken');
-                  try {
-                    await fetch(`${API_BASE}/admin/session/delete`, {
-                      method: 'DELETE',
-                      headers: { 'Authorization': `Bearer ${token}` }
-                    });
-                  } catch (error) {
-                    console.error('Session delete error:', error);
-                  }
-                  localStorage.clear();
-                  navigate('/');
-                }}
+                onClick={() => setShowLogoutModal(true)}
                 style={{
                   padding: '10px 18px',
                   backgroundColor: 'rgba(231, 76, 60, 0.3)',
@@ -265,18 +261,8 @@ function Navbar() {
           )}
           {isAdminLoggedIn && (
             <button
-              onClick={async () => {
-                const token = localStorage.getItem('adminToken');
-                try {
-                  await fetch(`${API_BASE}/admin/session/delete`, {
-                    method: 'DELETE',
-                    headers: { 'Authorization': `Bearer ${token}` }
-                  });
-                } catch (error) {
-                  console.error('Session delete error:', error);
-                }
-                localStorage.clear();
-                navigate('/');
+              onClick={() => {
+                setShowLogoutModal(true);
                 setShowMenu(false);
               }}
               style={{
@@ -302,7 +288,105 @@ function Navbar() {
           )}
         </div>
       )}
-    </div>
+      </div>
+
+      {/* Logout Confirmation Modal - Outside navbar for proper positioning */}
+      {showLogoutModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.7)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 99999,
+          padding: '20px'
+        }} onClick={() => setShowLogoutModal(false)}>
+          <div style={{
+            backgroundColor: 'white',
+            padding: 'clamp(25px, 5vw, 30px)',
+            borderRadius: '16px',
+            maxWidth: '400px',
+            width: '100%',
+            textAlign: 'center',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
+          }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ fontSize: 'clamp(45px, 10vw, 50px)', marginBottom: '15px' }}>⚠️</div>
+            <h2 style={{ 
+              color: '#2c3e50', 
+              marginBottom: '10px', 
+              fontSize: 'clamp(18px, 4vw, 22px)',
+              fontWeight: '700'
+            }}>
+              Confirm Logout
+            </h2>
+            <p style={{ 
+              color: '#7f8c8d', 
+              marginBottom: '25px', 
+              fontSize: 'clamp(13px, 3vw, 14px)',
+              lineHeight: '1.5'
+            }}>
+              Are you sure you want to logout?
+            </p>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={() => setShowLogoutModal(false)}
+                style={{
+                  flex: 1,
+                  padding: 'clamp(10px, 2.5vw, 12px)',
+                  backgroundColor: '#95a5a6',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '10px',
+                  cursor: 'pointer',
+                  fontSize: 'clamp(14px, 3vw, 15px)',
+                  fontWeight: '600',
+                  transition: 'all 0.3s'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#7f8c8d'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#95a5a6'}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  const token = localStorage.getItem('adminToken');
+                  try {
+                    await fetch(`${API_BASE}/admin/session/delete`, {
+                      method: 'DELETE',
+                      headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                  } catch (error) {
+                    console.error('Session delete error:', error);
+                  }
+                  localStorage.clear();
+                  navigate('/');
+                }}
+                style={{
+                  flex: 1,
+                  padding: 'clamp(10px, 2.5vw, 12px)',
+                  backgroundColor: '#e74c3c',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '10px',
+                  cursor: 'pointer',
+                  fontSize: 'clamp(14px, 3vw, 15px)',
+                  fontWeight: '600',
+                  transition: 'all 0.3s'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#c0392b'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#e74c3c'}
+              >
+                Logout
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

@@ -178,11 +178,18 @@ app.delete('/api/admin/session/delete', authenticateToken, async (req, res) => {
 
 // Admin: Create question with options and sub-questions (protected)
 app.post('/api/admin/questions', authenticateToken, async (req, res) => {
-  const { heading, description, options, subQuestions } = req.body;
+  const { heading, description, options, subQuestions, projectId } = req.body;
   try {
+    // Get next question number for this project
+    const countResult = await pool.query(
+      'SELECT COUNT(*) as count FROM questions WHERE project_id = $1',
+      [projectId]
+    );
+    const questionNumber = parseInt(countResult.rows[0].count) + 1;
+    
     const result = await pool.query(
-      'INSERT INTO questions (admin_id, heading, description) VALUES ($1, $2, $3) RETURNING *',
-      [req.admin.id, heading, description]
+      'INSERT INTO questions (admin_id, project_id, heading, description, question_number) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+      [req.admin.id, projectId, heading, description, questionNumber]
     );
     const questionId = result.rows[0].id;
 
@@ -226,7 +233,11 @@ app.post('/api/admin/questions', authenticateToken, async (req, res) => {
 app.get('/api/admin/questions', authenticateToken, async (req, res) => {
   try {
     const result = await pool.query(
-      'SELECT * FROM questions WHERE admin_id = $1 ORDER BY created_at DESC',
+      `SELECT q.*, p.title as project_title, p.date as project_date, p.description as project_description 
+       FROM questions q 
+       LEFT JOIN projects p ON q.project_id = p.id 
+       WHERE q.admin_id = $1 
+       ORDER BY p.date DESC, q.question_number ASC, q.created_at DESC`,
       [req.admin.id]
     );
     res.json(result.rows);
@@ -244,7 +255,7 @@ app.patch('/api/admin/questions/:id/toggle', authenticateToken, async (req, res)
     await pool.query('UPDATE sub_questions SET is_active = false');
     
     const result = await pool.query(
-      'UPDATE questions SET is_active = NOT is_active WHERE id = $1 AND admin_id = $2 RETURNING *',
+      'UPDATE questions SET is_active = NOT is_active, activated_at = CASE WHEN NOT is_active THEN NOW() ELSE NULL END WHERE id = $1 AND admin_id = $2 RETURNING *',
       [id, req.admin.id]
     );
     
@@ -266,11 +277,17 @@ app.patch('/api/admin/questions/:id/toggle', authenticateToken, async (req, res)
 app.patch('/api/admin/sub-questions/:id/toggle', async (req, res) => {
   const { id } = req.params;
   try {
-    await pool.query('UPDATE sub_questions SET is_active = false WHERE id != $1', [id]);
+    // First, clear activated_at for all other sub-questions
+    await pool.query('UPDATE sub_questions SET is_active = false, activated_at = NULL WHERE id != $1', [id]);
     
+    // Check current state
+    const current = await pool.query('SELECT is_active FROM sub_questions WHERE id = $1', [id]);
+    const willBeActive = !current.rows[0].is_active;
+    
+    // Toggle and set activated_at if activating
     const result = await pool.query(
-      'UPDATE sub_questions SET is_active = NOT is_active WHERE id = $1 RETURNING *',
-      [id]
+      'UPDATE sub_questions SET is_active = NOT is_active, activated_at = $2 WHERE id = $1 RETURNING *',
+      [id, willBeActive ? new Date() : null]
     );
     
     // Broadcast to all users
@@ -302,6 +319,103 @@ app.get('/api/admin/questions/:id/sub-questions', authenticateToken, async (req,
       [id]
     );
     res.json(subQuestions.rows);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Clear question vote history (protected)
+app.delete('/api/admin/questions/:id/history', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  try {
+    console.log('Clearing history for question:', id, 'Admin:', req.admin.id);
+    
+    // Verify question belongs to admin
+    const question = await pool.query('SELECT * FROM questions WHERE id = $1 AND admin_id = $2', [id, req.admin.id]);
+    if (question.rows.length === 0) {
+      console.log('Question not found or unauthorized');
+      return res.status(404).json({ error: 'Question not found' });
+    }
+
+    // Delete all main question votes
+    const result = await pool.query('DELETE FROM votes WHERE question_id = $1', [id]);
+    console.log('Deleted main votes:', result.rowCount);
+    
+    // Delete all sub-question votes for this question
+    const subQuestions = await pool.query('SELECT id FROM sub_questions WHERE question_id = $1', [id]);
+    let subVotesDeleted = 0;
+    for (const subQ of subQuestions.rows) {
+      const subResult = await pool.query('DELETE FROM sub_votes WHERE sub_question_id = $1', [subQ.id]);
+      subVotesDeleted += subResult.rowCount;
+    }
+    console.log('Deleted sub-votes:', subVotesDeleted);
+    
+    res.json({ 
+      success: true, 
+      message: 'Vote history cleared', 
+      deletedCount: result.rowCount,
+      subVotesDeleted 
+    });
+  } catch (error) {
+    console.error('Clear history error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get all projects for admin (protected)
+app.get('/api/admin/projects', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT * FROM projects WHERE admin_id = $1 ORDER BY date DESC, created_at DESC',
+      [req.admin.id]
+    );
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Create new project (protected)
+app.post('/api/admin/projects', authenticateToken, async (req, res) => {
+  const { title, description, date } = req.body;
+  try {
+    const result = await pool.query(
+      'INSERT INTO projects (admin_id, title, description, date) VALUES ($1, $2, $3, $4) RETURNING *',
+      [req.admin.id, title, description || '', date || new Date()]
+    );
+    res.json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update project (protected)
+app.put('/api/admin/projects/:id', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  const { title, description, date } = req.body;
+  try {
+    const result = await pool.query(
+      'UPDATE projects SET title = $1, description = $2, date = $3 WHERE id = $4 AND admin_id = $5 RETURNING *',
+      [title, description || '', date, id, req.admin.id]
+    );
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+    res.json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete project (protected) - CASCADE will delete all questions
+app.delete('/api/admin/projects/:id', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await pool.query('DELETE FROM projects WHERE id = $1 AND admin_id = $2', [id, req.admin.id]);
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+    res.json({ success: true, message: 'Project and all questions deleted' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -526,7 +640,8 @@ app.post('/api/sub-votes', async (req, res) => {
       };
     });
 
-    io.emit('subVoteUpdate', { subQuestionId, results });
+    // This endpoint is deprecated - use /api/votes with type='sub' instead
+    io.emit('voteUpdate', { questionId: subQuestionId, results, type: 'sub' });
 
     res.json({ success: true });
   } catch (error) {
