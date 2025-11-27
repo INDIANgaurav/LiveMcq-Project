@@ -12,11 +12,22 @@ function ProjectSelector({ onProjectSelect, selectedProjectId }) {
 
   const fetchProjects = async () => {
     const token = localStorage.getItem('adminToken');
-    const res = await fetch(`${API_URL}/admin/projects`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    const data = await res.json();
-    setProjects(data);
+    try {
+      const res = await fetch(`${API_URL}/admin/projects`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      // Ensure data is an array
+      if (Array.isArray(data)) {
+        setProjects(data);
+      } else {
+        console.error('Projects response is not an array:', data);
+        setProjects([]);
+      }
+    } catch (error) {
+      console.error('Error fetching projects:', error);
+      setProjects([]);
+    }
   };
 
   const createProject = async () => {
