@@ -57,12 +57,26 @@ const initDB = async () => {
   `);
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS projects (
+      id SERIAL PRIMARY KEY,
+      admin_id INTEGER REFERENCES admins(id) ON DELETE CASCADE,
+      title VARCHAR(255) NOT NULL,
+      description TEXT,
+      date DATE,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS questions (
       id SERIAL PRIMARY KEY,
       admin_id INTEGER REFERENCES admins(id) ON DELETE CASCADE,
+      project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
       heading VARCHAR(255) NOT NULL,
       description TEXT,
+      question_number INTEGER,
       is_active BOOLEAN DEFAULT false,
+      activated_at TIMESTAMP,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
@@ -81,7 +95,8 @@ const initDB = async () => {
       question_id INTEGER REFERENCES questions(id) ON DELETE CASCADE,
       sub_question_text TEXT NOT NULL,
       order_index INTEGER DEFAULT 0,
-      is_active BOOLEAN DEFAULT false
+      is_active BOOLEAN DEFAULT false,
+      activated_at TIMESTAMP
     )
   `);
 

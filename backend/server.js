@@ -5,6 +5,7 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import rateLimit from 'express-rate-limit';
 import pool from './db.js';
 
 dotenv.config();
@@ -32,6 +33,15 @@ app.use(cors({
   credentials: true
 }));
 app.use(express.json());
+
+// Rate limiting for bulk uploads - allows 200 requests per minute per IP
+const questionUploadLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 200, // 200 requests per minute (enough for bulk uploads)
+  message: { error: 'Too many requests, please slow down. Max 200 questions per minute.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 // Health check route
 app.get('/', (req, res) => {
@@ -177,26 +187,39 @@ app.delete('/api/admin/session/delete', authenticateToken, async (req, res) => {
 });
 
 // Admin: Create question with options and sub-questions (protected)
-app.post('/api/admin/questions', authenticateToken, async (req, res) => {
+app.post('/api/admin/questions', authenticateToken, questionUploadLimiter, async (req, res) => {
   const { heading, description, options, subQuestions, projectId } = req.body;
+  
+  // Input validation
+  if (!heading || !projectId) {
+    return res.status(400).json({ 
+      error: 'Missing required fields: heading and projectId are required',
+      success: false 
+    });
+  }
+
+  const client = await pool.connect();
   try {
+    // Start transaction for data consistency
+    await client.query('BEGIN');
+
     // Get next question number for this project
-    const countResult = await pool.query(
+    const countResult = await client.query(
       'SELECT COUNT(*) as count FROM questions WHERE project_id = $1',
       [projectId]
     );
     const questionNumber = parseInt(countResult.rows[0].count) + 1;
     
-    const result = await pool.query(
+    const result = await client.query(
       'INSERT INTO questions (admin_id, project_id, heading, description, question_number) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-      [req.admin.id, projectId, heading, description, questionNumber]
+      [req.admin.id, projectId, heading, description || '', questionNumber]
     );
     const questionId = result.rows[0].id;
 
     // Insert main options if provided
     if (options && options.length > 0) {
       for (const opt of options) {
-        await pool.query(
+        await client.query(
           'INSERT INTO options (question_id, option_text) VALUES ($1, $2)',
           [questionId, opt]
         );
@@ -207,25 +230,38 @@ app.post('/api/admin/questions', authenticateToken, async (req, res) => {
     if (subQuestions && subQuestions.length > 0) {
       for (let i = 0; i < subQuestions.length; i++) {
         const subQ = subQuestions[i];
-        const subQResult = await pool.query(
+        const subQResult = await client.query(
           'INSERT INTO sub_questions (question_id, sub_question_text, order_index) VALUES ($1, $2, $3) RETURNING *',
           [questionId, subQ.text, i]
         );
         const subQuestionId = subQResult.rows[0].id;
 
         // Insert options for this sub-question
-        for (const opt of subQ.options) {
-          await pool.query(
-            'INSERT INTO sub_options (sub_question_id, option_text) VALUES ($1, $2)',
-            [subQuestionId, opt]
-          );
+        if (subQ.options && subQ.options.length > 0) {
+          for (const opt of subQ.options) {
+            await client.query(
+              'INSERT INTO sub_options (sub_question_id, option_text) VALUES ($1, $2)',
+              [subQuestionId, opt]
+            );
+          }
         }
       }
     }
 
+    // Commit transaction
+    await client.query('COMMIT');
     res.json({ success: true, question: result.rows[0] });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    // Rollback on error
+    await client.query('ROLLBACK');
+    console.error('Question creation error:', error);
+    res.status(500).json({ 
+      error: error.message,
+      success: false,
+      details: 'Failed to create question. Transaction rolled back.'
+    });
+  } finally {
+    client.release();
   }
 });
 
