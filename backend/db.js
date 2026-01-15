@@ -5,22 +5,25 @@ dotenv.config();
 
 const { Pool } = pg;
 
-// Use DATABASE_URL for production (Render) or individual credentials for local
+// Safe logs (no secrets)
 console.log('DATABASE_URL exists:', !!process.env.DATABASE_URL);
-console.log('Using connection:', process.env.DATABASE_URL ? 'DATABASE_URL' : 'Individual credentials');
+console.log('RUN_DB_INIT =', process.env.RUN_DB_INIT);
 
+// Create connection pool
 const pool = new Pool(
   process.env.DATABASE_URL
     ? {
+        // ✅ Production (Render + Neon)
         connectionString: process.env.DATABASE_URL,
         ssl: {
-          rejectUnauthorized: false
+          rejectUnauthorized: false,
         },
-        max: 20, // Maximum 20 connections
+        max: 5,
         idleTimeoutMillis: 30000,
-        connectionTimeoutMillis: 2000,
+        connectionTimeoutMillis: 5000,
       }
     : {
+        // ✅ Local development
         user: process.env.DB_USER,
         host: process.env.DB_HOST,
         database: process.env.DB_NAME,
@@ -30,9 +33,8 @@ const pool = new Pool(
       }
 );
 
-// Create tables
+// 🔹 DB init function
 const initDB = async () => {
-  // Create admins table first (no dependencies)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS admins (
       id SERIAL PRIMARY KEY,
@@ -43,7 +45,6 @@ const initDB = async () => {
     )
   `);
 
-  // Create sessions table (depends on admins)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS sessions (
       id SERIAL PRIMARY KEY,
@@ -55,7 +56,6 @@ const initDB = async () => {
     )
   `);
 
-  // Create questions table (depends on admins)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS questions (
       id SERIAL PRIMARY KEY,
@@ -67,7 +67,6 @@ const initDB = async () => {
     )
   `);
 
-  // Create options table (depends on questions)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS options (
       id SERIAL PRIMARY KEY,
@@ -76,7 +75,6 @@ const initDB = async () => {
     )
   `);
 
-  // Create sub_questions table (depends on questions)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS sub_questions (
       id SERIAL PRIMARY KEY,
@@ -87,7 +85,6 @@ const initDB = async () => {
     )
   `);
 
-  // Create sub_options table (depends on sub_questions)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS sub_options (
       id SERIAL PRIMARY KEY,
@@ -96,7 +93,6 @@ const initDB = async () => {
     )
   `);
 
-  // Create votes table (depends on questions and options)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS votes (
       id SERIAL PRIMARY KEY,
@@ -107,7 +103,6 @@ const initDB = async () => {
     )
   `);
 
-  // Create sub_votes table (depends on sub_questions and sub_options)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS sub_votes (
       id SERIAL PRIMARY KEY,
@@ -118,9 +113,12 @@ const initDB = async () => {
     )
   `);
 
-  console.log('Database tables created successfully');
+  console.log('✅ Database tables created successfully');
 };
 
-initDB().catch(console.error);
+
+if (process.env.RUN_DB_INIT === 'true') {
+  initDB().catch(console.error);
+}
 
 export default pool;
