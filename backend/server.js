@@ -783,7 +783,26 @@ app.get('/api/session/verify/:code', async (req, res) => {
     if (result.rows.length === 0) {
       return res.status(404).json({ valid: false, message: 'Invalid or expired session' });
     }
-    res.json({ valid: true, session: result.rows[0] });
+
+    // Check if session is older than 24 hours
+    const session = result.rows[0];
+    const createdAt = new Date(session.created_at);
+    const now = new Date();
+    const hoursDiff = (now - createdAt) / (1000 * 60 * 60); // Convert milliseconds to hours
+
+    if (hoursDiff > 24) {
+      // Automatically deactivate expired session
+      await pool.query(
+        'UPDATE sessions SET is_active = false WHERE session_code = $1',
+        [code]
+      );
+      return res.status(404).json({ 
+        valid: false, 
+        message: 'Session expired. This link was valid for 24 hours only.' 
+      });
+    }
+
+    res.json({ valid: true, session: session });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
