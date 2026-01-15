@@ -80,12 +80,10 @@ function Navbar() {
 
         {/* Logo/Title */}
         <div 
-          onClick={() => navigate('/')}
           style={{ 
             display: 'flex', 
             alignItems: 'center', 
             gap: '10px',
-            cursor: 'pointer',
             flex: 1
           }}
         >
