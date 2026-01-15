@@ -261,6 +261,12 @@ function AdminDashboard() {
     
     const token = localStorage.getItem('adminToken');
     const question = questions.find(q => q.id === id);
+    const wasActive = question.is_active;
+    
+    // Optimistic UI update - immediately update the question state
+    setQuestions(prev => prev.map(q => 
+      q.id === id ? { ...q, is_active: !q.is_active } : q
+    ));
     
     // Clear any existing timer for this question using ref (synchronous)
     if (timerIntervalsRef.current[id]) {
@@ -269,47 +275,66 @@ function AdminDashboard() {
       setQuestionTimers(prev => ({ ...prev, [id]: 0 }));
     }
     
-    // THEN: Make API call
-    await fetch(`${API_URL}/admin/questions/${id}/toggle`, { 
-      method: 'PATCH',
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    
-    // FINALLY: If activating, start new timer
-    if (!question.is_active) {
-      setQuestionTimers(prev => ({ ...prev, [id]: 60 }));
+    try {
+      // Make API call
+      const response = await fetch(`${API_URL}/admin/questions/${id}/toggle`, { 
+        method: 'PATCH',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
       
-      const timerInterval = setInterval(() => {
-        setQuestionTimers(prev => {
-          const newTime = (prev[id] || 0) - 1;
-          if (newTime <= 0) {
-            clearInterval(timerInterval);
-            delete timerIntervalsRef.current[id];
-            // Auto-stop the question
-            fetch(`${API_URL}/admin/questions/${id}/toggle`, { 
-              method: 'PATCH',
-              headers: { 'Authorization': `Bearer ${token}` }
-            }).then(() => {
-              fetchQuestions();
-              if (expandedQuestion === `history-${id}`) {
-                setExpandedQuestion(null);
-                setTimeout(() => setExpandedQuestion(`history-${id}`), 100);
-              }
-              setToast({
-                message: 'Question automatically stopped after 60 seconds!',
-                type: 'info'
+      if (!response.ok) {
+        throw new Error('API call failed');
+      }
+      
+      // If activating, start new timer
+      if (!wasActive) {
+        setQuestionTimers(prev => ({ ...prev, [id]: 60 }));
+        
+        const timerInterval = setInterval(() => {
+          setQuestionTimers(prev => {
+            const newTime = (prev[id] || 0) - 1;
+            if (newTime <= 0) {
+              clearInterval(timerInterval);
+              delete timerIntervalsRef.current[id];
+              // Auto-stop the question
+              fetch(`${API_URL}/admin/questions/${id}/toggle`, { 
+                method: 'PATCH',
+                headers: { 'Authorization': `Bearer ${token}` }
+              }).then(() => {
+                // Update UI immediately for auto-stop
+                setQuestions(prev => prev.map(q => 
+                  q.id === id ? { ...q, is_active: false } : q
+                ));
+                if (expandedQuestion === `history-${id}`) {
+                  setExpandedQuestion(null);
+                  setTimeout(() => setExpandedQuestion(`history-${id}`), 100);
+                }
+                setToast({
+                  message: 'Question automatically stopped after 60 seconds!',
+                  type: 'info'
+                });
               });
-            });
-            return { ...prev, [id]: 0 };
-          }
-          return { ...prev, [id]: newTime };
-        });
-      }, 1000);
+              return { ...prev, [id]: 0 };
+            }
+            return { ...prev, [id]: newTime };
+          });
+        }, 1000);
+        
+        timerIntervalsRef.current[id] = timerInterval;
+      }
       
-      timerIntervalsRef.current[id] = timerInterval;
+    } catch (error) {
+      // Revert optimistic update on error
+      setQuestions(prev => prev.map(q => 
+        q.id === id ? { ...q, is_active: wasActive } : q
+      ));
+      setToast({
+        message: 'Failed to toggle question. Please try again.',
+        type: 'error'
+      });
     }
     
-    await fetchQuestions();
+    // Always reset toggling state immediately
     setTogglingQuestions(prev => ({ ...prev, [id]: false }));
   };
 
