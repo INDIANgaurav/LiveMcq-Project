@@ -62,7 +62,6 @@ function ProjectDetail() {
       }
 
       if (!res.ok) {
-        console.error('Failed to fetch questions');
         return;
       }
 
@@ -99,7 +98,7 @@ function ProjectDetail() {
         }
       }
     } catch (error) {
-      console.error('Error fetching questions:', error);
+      // Error fetching questions
     }
   };
 

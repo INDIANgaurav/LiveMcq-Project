@@ -27,7 +27,6 @@ function VoteHistory({ questionId }) {
       setHistory(data);
       setLoading(false);
     } catch (error) {
-      console.error('Error fetching history:', error);
       setLoading(false);
     }
   };

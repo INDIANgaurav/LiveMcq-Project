@@ -360,7 +360,7 @@ function Navbar() {
                       headers: { 'Authorization': `Bearer ${token}` }
                     });
                   } catch (error) {
-                    console.error('Session delete error:', error);
+                    // Session delete failed
                   }
                   localStorage.clear();
                   navigate('/');

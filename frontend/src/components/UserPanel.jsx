@@ -31,7 +31,6 @@ function UserPanel() {
           return;
         }
       } catch (error) {
-        console.error('Session validation error:', error);
         setSessionValid(false);
         setTimeout(() => navigate('/join'), 3000);
         return;
@@ -146,10 +145,8 @@ function UserPanel() {
     
     // Track this question as voted
     const questionKey = question.type === 'sub' ? `sub-${question.id}` : `main-${question.id}`;
-    console.log('Voted on:', questionKey);
     setVotedQuestions(prev => {
       const newSet = new Set([...prev, questionKey]);
-      console.log('Voted questions:', Array.from(newSet));
       return newSet;
     });
   };
@@ -284,7 +281,6 @@ function UserPanel() {
               // Check if already voted on main question
               const questionKey = `main-${mainQuestion.id}`;
               const alreadyVoted = votedQuestions.has(questionKey);
-              console.log('Switching to main, voted?', alreadyVoted, 'Key:', questionKey, 'Set:', Array.from(votedQuestions));
               setHasVoted(alreadyVoted);
               setSelectedOption(null);
               setResults([]);
@@ -316,7 +312,6 @@ function UserPanel() {
               // Check if already voted on sub question
               const questionKey = `sub-${subQuestion.id}`;
               const alreadyVoted = votedQuestions.has(questionKey);
-              console.log('Switching to sub, voted?', alreadyVoted, 'Key:', questionKey, 'Set:', Array.from(votedQuestions));
               setHasVoted(alreadyVoted);
               setSelectedOption(null);
               setResults([]);

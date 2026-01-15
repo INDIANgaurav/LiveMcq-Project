@@ -65,7 +65,6 @@ function AdminDashboard() {
           }
 
           if (!res.ok) {
-            console.error('Failed to create session:', res.status);
             return;
           }
 
@@ -75,11 +74,9 @@ function AdminDashboard() {
             localStorage.setItem('adminSessionCode', data.sessionCode);
             setSessionCode(data.sessionCode);
             setShowSessionModal(true);
-          } else {
-            console.error('No session code in response:', data);
           }
         } catch (error) {
-          console.error('Error creating session:', error);
+          // Session creation failed
         }
       };
       createNewSession();
@@ -160,7 +157,6 @@ function AdminDashboard() {
       }
 
       if (!res.ok) {
-        console.error('Failed to fetch questions');
         setQuestions([]);
         return;
       }
@@ -254,7 +250,6 @@ function AdminDashboard() {
         }
       }
     } catch (error) {
-      console.error('Error fetching questions:', error);
       setQuestions([]);
     }
   };
@@ -420,7 +415,6 @@ function AdminDashboard() {
         });
       }
     } catch (error) {
-      console.error('Clear history error:', error);
       setToast({
         message: 'Failed to clear history: ' + error.message,
         type: 'error'
@@ -521,7 +515,7 @@ function AdminDashboard() {
       setSessionCode(data.sessionCode);
       setShowSessionModal(true);
     } catch (error) {
-      console.error('Error creating session');
+      // Session creation failed
     }
   };
 
@@ -751,6 +745,29 @@ function AdminDashboard() {
                 <span>Create</span>
               </button>
               <button
+                onClick={() => navigate('/admin/bulk-upload')}
+                style={{
+                  padding: '10px 16px',
+                  backgroundColor: 'rgba(255,255,255,0.2)',
+                  color: 'white',
+                  border: '1px solid rgba(255,255,255,0.3)',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  backdropFilter: 'blur(10px)',
+                  transition: 'all 0.3s',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.3)'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.2)'}
+              >
+                <span>📤</span>
+                <span>Bulk Upload</span>
+              </button>
+              <button
                 onClick={shareLink}
                 style={{
                   padding: '10px 16px',
@@ -846,6 +863,33 @@ function AdminDashboard() {
             >
               <span style={{ fontSize: '18px' }}>➕</span>
               <span>Create Question</span>
+            </button>
+            <button
+              onClick={() => {
+                navigate('/admin/bulk-upload');
+                setShowMenu(false);
+              }}
+              style={{
+                width: '100%',
+                padding: '12px',
+                backgroundColor: 'transparent',
+                color: '#2c3e50',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: '600',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                marginBottom: '4px',
+                transition: 'all 0.3s'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+            >
+              <span style={{ fontSize: '18px' }}>📤</span>
+              <span>Bulk Upload</span>
             </button>
             <button
               onClick={() => {
@@ -1395,7 +1439,6 @@ function AdminDashboard() {
                         // If history exists, show modal
                         setClearHistoryModal({ id: q.id, heading: q.heading });
                       } catch (error) {
-                        console.error('Error checking history:', error);
                         // If check fails, show modal anyway
                         setClearHistoryModal({ id: q.id, heading: q.heading });
                       }

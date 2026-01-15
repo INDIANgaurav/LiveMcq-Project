@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import { API_BASE as API_URL } from '../config';
+import Toast from './Toast';
 
 function ProjectSelector({ onProjectSelect, selectedProjectId }) {
   const [projects, setProjects] = useState([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newProject, setNewProject] = useState({ title: '', description: '', date: '' });
+  const [toast, setToast] = useState(null);
 
   useEffect(() => {
     fetchProjects();
@@ -21,18 +23,16 @@ function ProjectSelector({ onProjectSelect, selectedProjectId }) {
       if (Array.isArray(data)) {
         setProjects(data);
       } else {
-        console.error('Projects response is not an array:', data);
         setProjects([]);
       }
     } catch (error) {
-      console.error('Error fetching projects:', error);
       setProjects([]);
     }
   };
 
   const createProject = async () => {
     const token = localStorage.getItem('adminToken');
-    await fetch(`${API_URL}/admin/projects`, {
+    const res = await fetch(`${API_URL}/admin/projects`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -40,13 +40,27 @@ function ProjectSelector({ onProjectSelect, selectedProjectId }) {
       },
       body: JSON.stringify(newProject)
     });
+    const createdProject = await res.json();
+    
     setShowCreateModal(false);
     setNewProject({ title: '', description: '', date: '' });
+    setToast({
+      message: 'Project created successfully!',
+      type: 'success'
+    });
+    
+    // Auto-select the newly created project
+    if (createdProject && createdProject.id) {
+      onProjectSelect(createdProject.id);
+    }
+    
     fetchProjects();
   };
 
   return (
     <div style={{ marginBottom: '20px' }}>
+      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+      
       <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
         <select
           value={selectedProjectId || ''}

@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import AdminDashboard from './components/AdminDashboard';
 import CreateQuestion from './components/CreateQuestion';
 import EditQuestion from './components/EditQuestion';
+import BulkUpload from './components/BulkUpload';
 import UserPanel from './components/UserPanel';
 import JoinSession from './components/JoinSession';
 import HomePage from './components/HomePage';
@@ -25,6 +26,7 @@ function App() {
           <Route path="/admin/login" element={<AdminLogin />} />
           <Route path="/admin/dashboard" element={<AdminDashboard />} />
           <Route path="/admin/create" element={<CreateQuestion />} />
+          <Route path="/admin/bulk-upload" element={<BulkUpload />} />
           <Route path="/admin/edit/:id" element={<EditQuestion />} />
         </Routes>
       </div>
