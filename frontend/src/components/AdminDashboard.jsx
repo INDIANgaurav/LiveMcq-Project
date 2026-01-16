@@ -87,7 +87,9 @@ function AdminDashboard() {
     // Create socket connection
     const newSocket = io(SOCKET_URL, {
       transports: ['websocket'],
-      reconnection: false
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionAttempts: 5
     });
     setSocket(newSocket);
 

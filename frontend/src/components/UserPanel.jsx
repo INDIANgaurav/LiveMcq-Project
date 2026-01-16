@@ -24,6 +24,20 @@ function UserPanel() {
     const validateSession = async () => {
       try {
         const res = await fetch(`${API_URL}/session/verify/${code}`);
+        
+        // Check if response is ok
+        if (!res.ok) {
+          // If 404 or 410, session doesn't exist or expired
+          if (res.status === 404 || res.status === 410) {
+            setSessionValid(false);
+            setTimeout(() => navigate('/join'), 3000);
+            return;
+          }
+          // For other errors, don't invalidate session immediately
+          console.error('Session validation error:', res.status);
+          return;
+        }
+        
         const data = await res.json();
         if (!data.valid) {
           setSessionValid(false);
@@ -31,9 +45,10 @@ function UserPanel() {
           return;
         }
       } catch (error) {
-        setSessionValid(false);
-        setTimeout(() => navigate('/join'), 3000);
-        return;
+        // Network error - don't invalidate session, just log
+        console.error('Network error during session validation:', error);
+        // Don't set sessionValid to false for network errors
+        // User might just have temporary connection issues
       }
     };
 
@@ -42,7 +57,9 @@ function UserPanel() {
     // Create socket connection
     const newSocket = io(SOCKET_URL, {
       transports: ['websocket'],
-      reconnection: false
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionAttempts: 5
     });
     setSocket(newSocket);
 
