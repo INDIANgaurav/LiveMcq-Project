@@ -161,9 +161,21 @@ function generateSessionCode() {
 // Create new session (protected route)
 app.post('/api/admin/session/create', authenticateToken, async (req, res) => {
   try {
-    const sessionCode = generateSessionCode();
     const admin = await pool.query('SELECT name FROM admins WHERE id = $1', [req.admin.id]);
     
+    // Check if admin already has an active session
+    const existingSession = await pool.query(
+      'SELECT * FROM sessions WHERE admin_id = $1 AND is_active = true ORDER BY created_at DESC LIMIT 1',
+      [req.admin.id]
+    );
+    
+    // If active session exists, return it
+    if (existingSession.rows.length > 0) {
+      return res.json({ sessionCode: existingSession.rows[0].session_code });
+    }
+    
+    // Otherwise create new session
+    const sessionCode = generateSessionCode();
     const result = await pool.query(
       'INSERT INTO sessions (session_code, admin_id, admin_name) VALUES ($1, $2, $3) RETURNING *',
       [sessionCode, req.admin.id, admin.rows[0].name]
@@ -178,8 +190,9 @@ app.post('/api/admin/session/create', authenticateToken, async (req, res) => {
 // Delete admin session on logout (protected route)
 app.delete('/api/admin/session/delete', authenticateToken, async (req, res) => {
   try {
-    await pool.query('DELETE FROM sessions WHERE admin_id = $1', [req.admin.id]);
-    res.json({ message: 'Session deleted successfully' });
+    // Don't delete, just deactivate the session
+    await pool.query('UPDATE sessions SET is_active = false WHERE admin_id = $1', [req.admin.id]);
+    res.json({ message: 'Session deactivated successfully' });
   } catch (error) {
     console.error('Session deletion error:', error);
     res.status(500).json({ error: error.message });

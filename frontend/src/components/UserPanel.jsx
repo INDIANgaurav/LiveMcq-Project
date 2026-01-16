@@ -105,25 +105,44 @@ function UserPanel() {
   }, []);
 
   const fetchActiveQuestion = async () => {
-    const res = await fetch(`${API_URL}/questions/active`);
-    const data = await res.json();
-    if (data) {
-      if (data.type === 'main') {
-        setMainQuestion(data);
-        setQuestion(data);
-        setActiveView('main');
+    try {
+      const res = await fetch(`${API_URL}/questions/active`);
+      const data = await res.json();
+      
+      // Only set question if data exists and is valid
+      if (data && data.id) {
+        if (data.type === 'main') {
+          setMainQuestion(data);
+          setQuestion(data);
+          setActiveView('main');
+        } else {
+          setSubQuestion(data);
+          setQuestion(data);
+          setActiveView('sub');
+        }
+        // Fetch existing results if any
+        const resResults = await fetch(`${API_URL}/questions/${data.id}/results`);
+        const resultsData = await resResults.json();
+        if (resultsData.some(r => r.votes > 0)) {
+          setResults(resultsData);
+          setShowResults(true);
+        }
       } else {
-        setSubQuestion(data);
-        setQuestion(data);
-        setActiveView('sub');
+        // No active question - set everything to null
+        setQuestion(null);
+        setMainQuestion(null);
+        setSubQuestion(null);
+        setActiveView('main');
+        setHasVoted(false);
+        setSelectedOption(null);
+        setResults([]);
+        setShowResults(false);
       }
-      // Fetch existing results if any
-      const resResults = await fetch(`${API_URL}/questions/${data.id}/results`);
-      const resultsData = await resResults.json();
-      if (resultsData.some(r => r.votes > 0)) {
-        setResults(resultsData);
-        setShowResults(true);
-      }
+    } catch (error) {
+      // Error fetching - set everything to null
+      setQuestion(null);
+      setMainQuestion(null);
+      setSubQuestion(null);
     }
   };
 
@@ -484,7 +503,9 @@ function UserPanel() {
             <h3 style={{ marginBottom: '20px', color: '#2c3e50' }}>
               📊 Live Results {hasVoted && <span style={{ color: '#27ae60' }}>- Your vote recorded!</span>}
             </h3>
-            {results.map((opt, idx) => (
+            {results
+              .sort((a, b) => a.id - b.id) // Sort by option ID to maintain original order
+              .map((opt, idx) => (
               <div key={opt.id} style={{ marginBottom: '20px' }}>
                 <div style={{ 
                   display: 'flex', 

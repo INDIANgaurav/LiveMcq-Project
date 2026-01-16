@@ -1503,7 +1503,9 @@ function AdminDashboard() {
                   borderRadius: '8px',
                 }}>
                   <h4 style={{ margin: '0 0 15px 0', color: '#2c3e50' }}>📊 Live Results</h4>
-                  {liveResults[q.id].map((opt, idx) => (
+                  {liveResults[q.id]
+                    .sort((a, b) => a.id - b.id) // Sort by option ID to maintain original order
+                    .map((opt, idx) => (
                     <div key={opt.id} style={{ marginBottom: '15px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
                         <span style={{ fontWeight: '600' }}>
@@ -1655,7 +1657,9 @@ function AdminDashboard() {
                                 border: '1px solid #e0e0e0'
                               }}>
                                 <h5 style={{ margin: '0 0 10px 0', color: '#9b59b6', fontSize: '13px' }}>📊 Live Results</h5>
-                                {subResult.results.map((opt, optIdx) => (
+                                {subResult.results
+                                  .sort((a, b) => a.id - b.id) // Sort by option ID to maintain original order
+                                  .map((opt, optIdx) => (
                                   <div key={opt.id} style={{ marginBottom: '10px' }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px', fontSize: '13px' }}>
                                       <span style={{ fontWeight: '600' }}>
