@@ -169,12 +169,26 @@ app.post('/api/admin/session/create', authenticateToken, async (req, res) => {
       [req.admin.id]
     );
     
-    // If active session exists, return it
+    // If active session exists, check if it's still valid (within 24 hours)
     if (existingSession.rows.length > 0) {
-      return res.json({ sessionCode: existingSession.rows[0].session_code });
+      const session = existingSession.rows[0];
+      const createdAt = new Date(session.created_at);
+      const now = new Date();
+      const hoursDiff = (now - createdAt) / (1000 * 60 * 60);
+      
+      // If session is less than 24 hours old, return it
+      if (hoursDiff <= 24) {
+        return res.json({ sessionCode: session.session_code });
+      }
+      
+      // If session is older than 24 hours, deactivate it
+      await pool.query(
+        'UPDATE sessions SET is_active = false WHERE id = $1',
+        [session.id]
+      );
     }
     
-    // Otherwise create new session
+    // Create new session
     const sessionCode = generateSessionCode();
     const result = await pool.query(
       'INSERT INTO sessions (session_code, admin_id, admin_name) VALUES ($1, $2, $3) RETURNING *',
