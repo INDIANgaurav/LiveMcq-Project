@@ -302,6 +302,17 @@ function AdminDashboard() {
       });
     }
     
+    // Fetch results after toggle (for both activate and deactivate)
+    try {
+      const resResults = await fetch(`${API_URL}/questions/${id}/results`);
+      const results = await resResults.json();
+      if (results.mainResults) {
+        setLiveResults((prev) => ({ ...prev, [id]: results.mainResults }));
+      }
+    } catch (error) {
+      // Results fetch failed, not critical
+    }
+    
     // Always reset toggling state immediately
     setTogglingQuestions(prev => ({ ...prev, [id]: false }));
   };
@@ -1404,33 +1415,43 @@ function AdminDashboard() {
             >
               <div style={{ marginBottom: '20px' }}>
                 <div style={{ marginBottom: '15px' }}>
-                  <h3 style={{ margin: '0 0 10px 0', color: '#2c3e50', fontSize: '20px' }}>
-                    <span style={{ color: '#667eea', fontWeight: '800', marginRight: '8px' }}>
-                      Q{q.question_number}.
+                  <h3 style={{ 
+                    margin: '0 0 10px 0', 
+                    color: '#2c3e50', 
+                    fontSize: '20px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    flexWrap: 'wrap',
+                    gap: '10px'
+                  }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ color: '#667eea', fontWeight: '800' }}>
+                        Q{q.question_number}.
+                      </span>
+                      <span>{q.heading}</span>
                     </span>
-                    {q.heading}
                     {q.is_active && (
                       <>
                         <span style={{
-                          marginLeft: '15px',
                           padding: '6px 14px',
                           backgroundColor: '#27ae60',
                           color: 'white',
                           borderRadius: '20px',
                           fontSize: '13px',
                           fontWeight: 'normal',
+                          whiteSpace: 'nowrap'
                         }}>
                           🔴 LIVE
                         </span>
                         {questionTimers[q.id] > 0 && (
                           <span style={{
-                            marginLeft: '10px',
                             padding: '6px 14px',
                             backgroundColor: questionTimers[q.id] <= 10 ? '#e74c3c' : '#3498db',
                             color: 'white',
                             borderRadius: '20px',
                             fontSize: '13px',
                             fontWeight: 'bold',
+                            whiteSpace: 'nowrap'
                           }}>
                             ⏱ {questionTimers[q.id]}s
                           </span>
