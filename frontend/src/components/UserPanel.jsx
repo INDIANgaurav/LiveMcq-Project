@@ -430,7 +430,9 @@ function UserPanel() {
             }}>
               Select your answer:
             </h3>
-            {question.options.map((opt, idx) => (
+            {question.options
+              .sort((a, b) => a.id - b.id) // Sort by option ID to maintain original order
+              .map((opt, idx) => (
               <div key={opt.id} style={{ marginBottom: '16px' }}>
                 <label
                   style={{
