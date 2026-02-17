@@ -44,43 +44,9 @@ function AdminDashboard() {
       return;
     }
 
-    // Check if session exists and create if needed
+    // Check if session exists (don't auto-create)
     const existingSession = localStorage.getItem('adminSessionCode');
-    if (!existingSession) {
-      // Create new session automatically
-      const createNewSession = async () => {
-        try {
-          const res = await fetch(`${API_URL}/admin/session/create`, {
-            method: 'POST',
-            headers: { 
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}`
-            }
-          });
-
-          if (res.status === 401 || res.status === 403) {
-            localStorage.clear();
-            navigate('/admin/login');
-            return;
-          }
-
-          if (!res.ok) {
-            return;
-          }
-
-          const data = await res.json();
-          
-          if (data.sessionCode) {
-            localStorage.setItem('adminSessionCode', data.sessionCode);
-            setSessionCode(data.sessionCode);
-            setShowSessionModal(true);
-          }
-        } catch (error) {
-          // Session creation failed
-        }
-      };
-      createNewSession();
-    } else {
+    if (existingSession) {
       setSessionCode(existingSession);
     }
 
@@ -581,6 +547,49 @@ function AdminDashboard() {
     }
   };
 
+  const endSession = async () => {
+    const token = localStorage.getItem('adminToken');
+    const code = sessionCode || localStorage.getItem('adminSessionCode');
+    
+    if (!code) {
+      setToast({
+        message: 'No active session to end',
+        type: 'error'
+      });
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_URL}/admin/session/end/${code}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        localStorage.removeItem('adminSessionCode');
+        setSessionCode(null);
+        setToast({
+          message: 'Session ended successfully!',
+          type: 'success'
+        });
+      } else {
+        const data = await response.json();
+        setToast({
+          message: data.error || 'Failed to end session',
+          type: 'error'
+        });
+      }
+    } catch (error) {
+      setToast({
+        message: 'Failed to end session: ' + error.message,
+        type: 'error'
+      });
+    }
+  };
+
   return (
     <div style={{ 
       maxWidth: '1000px', 
@@ -823,6 +832,67 @@ function AdminDashboard() {
                 <span>📋</span>
                 <span>Share</span>
               </button>
+              {sessionCode ? (
+                <button
+                  onClick={endSession}
+                  style={{
+                    padding: '10px 16px',
+                    backgroundColor: 'rgba(231, 76, 60, 0.9)',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                    transition: 'all 0.3s',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = '#c0392b';
+                    e.currentTarget.style.transform = 'translateY(-1px)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = 'rgba(231, 76, 60, 0.9)';
+                    e.currentTarget.style.transform = 'translateY(0)';
+                  }}
+                >
+                  <span>🛑</span>
+                  <span>End Session</span>
+                </button>
+              ) : (
+                <button
+                  onClick={createSession}
+                  style={{
+                    padding: '10px 16px',
+                    backgroundColor: 'rgba(46, 204, 113, 0.9)',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                    transition: 'all 0.3s',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = '#27ae60';
+                    e.currentTarget.style.transform = 'translateY(-1px)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = 'rgba(46, 204, 113, 0.9)';
+                    e.currentTarget.style.transform = 'translateY(0)';
+                  }}
+                >
+                  <span>▶️</span>
+                  <span>Start Session</span>
+                </button>
+              )}
             </div>
           )}
           
@@ -945,6 +1015,63 @@ function AdminDashboard() {
               <span style={{ fontSize: '18px' }}>📋</span>
               <span>Share Link</span>
             </button>
+            {sessionCode ? (
+              <button
+                onClick={() => {
+                  endSession();
+                  setShowMenu(false);
+                }}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  backgroundColor: 'transparent',
+                  color: '#e74c3c',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  marginBottom: '4px',
+                  transition: 'all 0.3s'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#fee'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+              >
+                <span style={{ fontSize: '18px' }}>🛑</span>
+                <span>End Session</span>
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  createSession();
+                  setShowMenu(false);
+                }}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  backgroundColor: 'transparent',
+                  color: '#27ae60',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  marginBottom: '4px',
+                  transition: 'all 0.3s'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#e8f8f5'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+              >
+                <span style={{ fontSize: '18px' }}>▶️</span>
+                <span>Start Session</span>
+              </button>
+            )}
           </div>
         )}
       </div>

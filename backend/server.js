@@ -163,32 +163,29 @@ app.post('/api/admin/session/create', authenticateToken, async (req, res) => {
   try {
     const admin = await pool.query('SELECT name FROM admins WHERE id = $1', [req.admin.id]);
     
-    // Check if admin already has an active session
+    // Check if admin has ANY session in last 24 hours (ignore is_active status)
     const existingSession = await pool.query(
-      'SELECT * FROM sessions WHERE admin_id = $1 AND is_active = true ORDER BY created_at DESC LIMIT 1',
+      `SELECT * FROM sessions 
+       WHERE admin_id = $1 
+       AND created_at > NOW() - INTERVAL '24 hours'
+       ORDER BY created_at DESC LIMIT 1`,
       [req.admin.id]
     );
     
-    // If active session exists, check if it's still valid (within 24 hours)
+    // If session exists within 24 hours, reactivate and return it
     if (existingSession.rows.length > 0) {
       const session = existingSession.rows[0];
-      const createdAt = new Date(session.created_at);
-      const now = new Date();
-      const hoursDiff = (now - createdAt) / (1000 * 60 * 60);
       
-      // If session is less than 24 hours old, return it
-      if (hoursDiff <= 24) {
-        return res.json({ sessionCode: session.session_code });
-      }
-      
-      // If session is older than 24 hours, deactivate it
+      // Make sure it's active (in case it was deactivated)
       await pool.query(
-        'UPDATE sessions SET is_active = false WHERE id = $1',
+        'UPDATE sessions SET is_active = true WHERE id = $1',
         [session.id]
       );
+      
+      return res.json({ sessionCode: session.session_code });
     }
     
-    // Create new session
+    // Create new session only if no session exists in last 24 hours
     const sessionCode = generateSessionCode();
     const result = await pool.query(
       'INSERT INTO sessions (session_code, admin_id, admin_name) VALUES ($1, $2, $3) RETURNING *',
@@ -204,9 +201,9 @@ app.post('/api/admin/session/create', authenticateToken, async (req, res) => {
 // Delete admin session on logout (protected route)
 app.delete('/api/admin/session/delete', authenticateToken, async (req, res) => {
   try {
-    // Don't delete, just deactivate the session
-    await pool.query('UPDATE sessions SET is_active = false WHERE admin_id = $1', [req.admin.id]);
-    res.json({ message: 'Session deactivated successfully' });
+    // Don't deactivate session on logout - let it expire naturally after 24 hours
+    // Session will remain active for students even if admin logs out
+    res.json({ message: 'Logged out successfully. Session remains active for students.' });
   } catch (error) {
     console.error('Session deletion error:', error);
     res.status(500).json({ error: error.message });
