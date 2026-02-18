@@ -18,10 +18,6 @@ function AdminDashboard() {
   const [toast, setToast] = useState(null);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   const [showMenu, setShowMenu] = useState(false);
-  const [questionTimers, setQuestionTimers] = useState({});
-  const timerIntervalsRef = useRef({});
-  const [subQuestionTimers, setSubQuestionTimers] = useState({});
-  const subTimerIntervalsRef = useRef({});
   const [expandedProjects, setExpandedProjects] = useState({});
   const [editingProject, setEditingProject] = useState(null);
   const [editProjectData, setEditProjectData] = useState({ title: '', description: '', date: '' });
@@ -90,13 +86,6 @@ function AdminDashboard() {
 
     return () => {
       newSocket.disconnect();
-      // Clear all timers on unmount
-      Object.values(timerIntervalsRef.current).forEach(interval => {
-        if (interval) clearInterval(interval);
-      });
-      Object.values(subTimerIntervalsRef.current).forEach(interval => {
-        if (interval) clearInterval(interval);
-      });
     };
   }, [navigate]);
 
@@ -142,38 +131,6 @@ function AdminDashboard() {
           if (results.subResults) {
             setSubResults((prev) => ({ ...prev, [q.id]: results.subResults }));
           }
-          
-          // Calculate remaining time if activated_at exists
-          if (q.activated_at) {
-            const activatedTime = new Date(q.activated_at).getTime();
-            const now = Date.now();
-            const elapsed = Math.floor((now - activatedTime) / 1000);
-            const remaining = Math.max(0, 60 - elapsed);
-            
-            if (remaining > 0 && !timerIntervalsRef.current[q.id]) {
-              // Only start timer if one doesn't exist already
-              setQuestionTimers(prev => ({ ...prev, [q.id]: remaining }));
-              
-              const timerInterval = setInterval(() => {
-                setQuestionTimers(prev => {
-                  const newTime = (prev[q.id] || 0) - 1;
-                  if (newTime <= 0) {
-                    clearInterval(timerInterval);
-                    delete timerIntervalsRef.current[q.id];
-                    // Auto-stop
-                    fetch(`${API_URL}/admin/questions/${q.id}/toggle`, { 
-                      method: 'PATCH',
-                      headers: { 'Authorization': `Bearer ${token}` }
-                    }).then(() => fetchQuestions());
-                    return { ...prev, [q.id]: 0 };
-                  }
-                  return { ...prev, [q.id]: newTime };
-                });
-              }, 1000);
-              
-              timerIntervalsRef.current[q.id] = timerInterval;
-            }
-          }
         }
         
         // Fetch sub-questions
@@ -183,38 +140,6 @@ function AdminDashboard() {
         const subData = await subRes.json();
         if (subData.length > 0) {
           setSubQuestions((prev) => ({ ...prev, [q.id]: subData }));
-          
-          // Start timers for active sub-questions
-          for (const subQ of subData) {
-            if (subQ.is_active && subQ.activated_at) {
-              const activatedTime = new Date(subQ.activated_at).getTime();
-              const now = Date.now();
-              const elapsed = Math.floor((now - activatedTime) / 1000);
-              const remaining = Math.max(0, 60 - elapsed);
-              
-              if (remaining > 0 && !subTimerIntervalsRef.current[subQ.id]) {
-                setSubQuestionTimers(prev => ({ ...prev, [subQ.id]: remaining }));
-                
-                const timerInterval = setInterval(() => {
-                  setSubQuestionTimers(prev => {
-                    const newTime = (prev[subQ.id] || 0) - 1;
-                    if (newTime <= 0) {
-                      clearInterval(timerInterval);
-                      delete subTimerIntervalsRef.current[subQ.id];
-                      // Auto-stop
-                      fetch(`${API_URL}/admin/sub-questions/${subQ.id}/toggle`, { 
-                        method: 'PATCH'
-                      }).then(() => fetchQuestions());
-                      return { ...prev, [subQ.id]: 0 };
-                    }
-                    return { ...prev, [subQ.id]: newTime };
-                  });
-                }, 1000);
-                
-                subTimerIntervalsRef.current[subQ.id] = timerInterval;
-              }
-            }
-          }
         }
       }
     } catch (error) {
@@ -236,13 +161,6 @@ function AdminDashboard() {
       q.id === id ? { ...q, is_active: !q.is_active } : q
     ));
     
-    // Clear any existing timer for this question using ref (synchronous)
-    if (timerIntervalsRef.current[id]) {
-      clearInterval(timerIntervalsRef.current[id]);
-      delete timerIntervalsRef.current[id];
-      setQuestionTimers(prev => ({ ...prev, [id]: 0 }));
-    }
-    
     try {
       // Make API call
       const response = await fetch(`${API_URL}/admin/questions/${id}/toggle`, { 
@@ -252,43 +170,6 @@ function AdminDashboard() {
       
       if (!response.ok) {
         throw new Error('API call failed');
-      }
-      
-      // If activating, start new timer
-      if (!wasActive) {
-        setQuestionTimers(prev => ({ ...prev, [id]: 60 }));
-        
-        const timerInterval = setInterval(() => {
-          setQuestionTimers(prev => {
-            const newTime = (prev[id] || 0) - 1;
-            if (newTime <= 0) {
-              clearInterval(timerInterval);
-              delete timerIntervalsRef.current[id];
-              // Auto-stop the question
-              fetch(`${API_URL}/admin/questions/${id}/toggle`, { 
-                method: 'PATCH',
-                headers: { 'Authorization': `Bearer ${token}` }
-              }).then(() => {
-                // Update UI immediately for auto-stop
-                setQuestions(prev => prev.map(q => 
-                  q.id === id ? { ...q, is_active: false } : q
-                ));
-                if (expandedQuestion === `history-${id}`) {
-                  setExpandedQuestion(null);
-                  setTimeout(() => setExpandedQuestion(`history-${id}`), 100);
-                }
-                setToast({
-                  message: 'Question automatically stopped after 60 seconds!',
-                  type: 'info'
-                });
-              });
-              return { ...prev, [id]: 0 };
-            }
-            return { ...prev, [id]: newTime };
-          });
-        }, 1000);
-        
-        timerIntervalsRef.current[id] = timerInterval;
       }
       
     } catch (error) {
@@ -318,46 +199,8 @@ function AdminDashboard() {
   };
 
   const toggleSubQuestion = async (subId, questionId) => {
-    const subQuestion = subQuestions[questionId]?.find(sq => sq.id === subId);
-    
-    // Clear any existing timer for this sub-question
-    if (subTimerIntervalsRef.current[subId]) {
-      clearInterval(subTimerIntervalsRef.current[subId]);
-      delete subTimerIntervalsRef.current[subId];
-      setSubQuestionTimers(prev => ({ ...prev, [subId]: 0 }));
-    }
-    
     // Toggle the sub-question
     await fetch(`${API_URL}/admin/sub-questions/${subId}/toggle`, { method: 'PATCH' });
-    
-    // If activating, start timer
-    if (!subQuestion.is_active) {
-      setSubQuestionTimers(prev => ({ ...prev, [subId]: 60 }));
-      
-      const timerInterval = setInterval(() => {
-        setSubQuestionTimers(prev => {
-          const newTime = (prev[subId] || 0) - 1;
-          if (newTime <= 0) {
-            clearInterval(timerInterval);
-            delete subTimerIntervalsRef.current[subId];
-            // Auto-stop the sub-question
-            fetch(`${API_URL}/admin/sub-questions/${subId}/toggle`, { 
-              method: 'PATCH'
-            }).then(() => {
-              fetchQuestions();
-              setToast({
-                message: 'Sub-question automatically stopped after 60 seconds!',
-                type: 'info'
-              });
-            });
-            return { ...prev, [subId]: 0 };
-          }
-          return { ...prev, [subId]: newTime };
-        });
-      }, 1000);
-      
-      subTimerIntervalsRef.current[subId] = timerInterval;
-    }
     
     // Fetch fresh results after toggle
     const resResults = await fetch(`${API_URL}/questions/${questionId}/results`);
@@ -1431,32 +1274,17 @@ function AdminDashboard() {
                       <span>{q.heading}</span>
                     </span>
                     {q.is_active && (
-                      <>
-                        <span style={{
-                          padding: '6px 14px',
-                          backgroundColor: '#27ae60',
-                          color: 'white',
-                          borderRadius: '20px',
-                          fontSize: '13px',
-                          fontWeight: 'normal',
-                          whiteSpace: 'nowrap'
-                        }}>
-                          🔴 LIVE
-                        </span>
-                        {questionTimers[q.id] > 0 && (
-                          <span style={{
-                            padding: '6px 14px',
-                            backgroundColor: questionTimers[q.id] <= 10 ? '#e74c3c' : '#3498db',
-                            color: 'white',
-                            borderRadius: '20px',
-                            fontSize: '13px',
-                            fontWeight: 'bold',
-                            whiteSpace: 'nowrap'
-                          }}>
-                            ⏱ {questionTimers[q.id]}s
-                          </span>
-                        )}
-                      </>
+                      <span style={{
+                        padding: '6px 14px',
+                        backgroundColor: '#27ae60',
+                        color: 'white',
+                        borderRadius: '20px',
+                        fontSize: '13px',
+                        fontWeight: 'normal',
+                        whiteSpace: 'nowrap'
+                      }}>
+                        🔴 LIVE
+                      </span>
                     )}
                   </h3>
                   {q.description && <p style={{ color: '#7f8c8d', margin: 0 }}>{q.description}</p>}
@@ -1750,21 +1578,6 @@ function AdminDashboard() {
                                 }}>
                                   🔴 LIVE
                                 </span>
-                                {subQuestionTimers[subQ.id] > 0 && (
-                                  <span style={{
-                                    padding: '4px 10px',
-                                    backgroundColor: subQuestionTimers[subQ.id] <= 10 ? '#e74c3c' : '#3498db',
-                                    color: 'white',
-                                    borderRadius: '12px',
-                                    fontSize: '11px',
-                                    fontWeight: 'bold',
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '4px'
-                                  }}>
-                                    ⏱ {subQuestionTimers[subQ.id]}s
-                                  </span>
-                                )}
                               </div>
                             )}
                           </div>
