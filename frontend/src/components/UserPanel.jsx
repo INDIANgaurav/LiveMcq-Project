@@ -124,15 +124,10 @@ function UserPanel() {
 
     // Listen for question closed
     newSocket.on('questionClosed', () => {
+      setQuestion(null);
+      setMainQuestion(null);
       setSubQuestion(null);
-      const currentMain = mainQuestionRef.current;
-      if (currentMain) {
-        setQuestion(currentMain);
-        setActiveView('main');
-      } else {
-        setQuestion(null);
-        setMainQuestion(null);
-      }
+      setDismissed(false);
       setHasVoted(false);
       setSelectedOption(null);
       setResults([]);
