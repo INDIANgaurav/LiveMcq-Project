@@ -347,6 +347,7 @@ app.patch('/api/admin/questions/:id/toggle', authenticateToken, async (req, res)
       const options = await pool.query('SELECT * FROM options WHERE question_id = $1', [id]);
       io.emit('newQuestion', { ...result.rows[0], options: options.rows, type: 'main' });
     } else {
+      console.log('[Socket] Emitting questionClosed for question:', id);
       io.emit('questionClosed');
     }
     

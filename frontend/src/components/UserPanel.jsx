@@ -83,13 +83,66 @@ function UserPanel() {
 
     fetchActiveQuestion();
 
+    // Fallback polling - ONLY when socket is disconnected (Render free tier drops connections)
+    let pollInterval = null;
+
+    newSocket.on('disconnect', () => {
+      console.log('[Socket] Disconnected, starting fallback polling');
+      pollInterval = setInterval(async () => {
+        try {
+          const res = await fetch(`${API_URL}/questions/active`);
+          const data = await res.json();
+          const currentQ = questionRef.current;
+
+          if (!data || !data.id) {
+            if (currentQ) {
+              setQuestion(null);
+              setMainQuestion(null);
+              setSubQuestion(null);
+              setHasVoted(false);
+              setSelectedOption(null);
+              setResults([]);
+              setShowResults(false);
+            }
+          } else if (currentQ && data.id !== currentQ.id) {
+            if (data.type === 'main') {
+              setMainQuestion(data);
+              setQuestion(data);
+              setActiveView('main');
+              setSubQuestion(null);
+            } else {
+              setSubQuestion(data);
+              setQuestion(data);
+              setActiveView('sub');
+            }
+            setHasVoted(votedQuestionsRef.current.has(`${data.type}-${data.id}`));
+            setSelectedOption(null);
+            setResults([]);
+            setShowResults(false);
+          }
+        } catch {
+          // ignore
+        }
+      }, 5000);
+    });
+
+    // Stop polling when socket reconnects
+    newSocket.on('connect', () => {
+      console.log('[Socket] Reconnected, stopping fallback polling');
+      if (pollInterval) {
+        clearInterval(pollInterval);
+        pollInterval = null;
+      }
+      // Sync state with server on reconnect
+      fetchActiveQuestion();
+    });
+
     // Listen for new main questions
     newSocket.on('newQuestion', (newQuestion) => {
       setMainQuestion(newQuestion);
       setQuestion(newQuestion);
       setActiveView('main');
       setSubQuestion(null);
-      setDismissed(false);
       // Use ref to avoid stale closure
       const alreadyVoted = votedQuestionsRef.current.has(`main-${newQuestion.id}`);
       setHasVoted(alreadyVoted);
@@ -103,7 +156,6 @@ function UserPanel() {
       setSubQuestion(newSubQuestion);
       setQuestion(newSubQuestion);
       setActiveView('sub');
-      setDismissed(false);
       // Use ref to avoid stale closure
       const alreadyVoted = votedQuestionsRef.current.has(`sub-${newSubQuestion.id}`);
       setHasVoted(alreadyVoted);
@@ -124,10 +176,10 @@ function UserPanel() {
 
     // Listen for question closed
     newSocket.on('questionClosed', () => {
+      console.log('[Socket] questionClosed received');
       setQuestion(null);
       setMainQuestion(null);
       setSubQuestion(null);
-      setDismissed(false);
       setHasVoted(false);
       setSelectedOption(null);
       setResults([]);
@@ -137,6 +189,7 @@ function UserPanel() {
     return () => {
       newSocket.disconnect();
       socketRef.current = null;
+      if (pollInterval) clearInterval(pollInterval);
     };
   }, []);
 
@@ -187,7 +240,6 @@ function UserPanel() {
   };
 
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [dismissed, setDismissed] = useState(false);
 
   const handleVote = async () => {
     if (!selectedOption || hasVoted || isSubmitting) return;
@@ -288,7 +340,7 @@ function UserPanel() {
     );
   }
 
-  if (!question || dismissed) {
+  if (!question) {
     return (
       <div style={{ 
         textAlign: 'center', 
@@ -425,7 +477,7 @@ function UserPanel() {
         }}>
           {/* Dismiss button */}
           <button
-            onClick={() => setDismissed(true)}
+            onClick={() => setQuestion(null)}
             title="Skip this question"
             style={{
               position: 'absolute',
