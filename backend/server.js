@@ -22,6 +22,9 @@ const io = new Server(httpServer, {
     methods: ['GET', 'POST'],
     credentials: true
   },
+  transports: ['websocket', 'polling'],
+  pingTimeout: 60000,
+  pingInterval: 25000,
 });
 
 app.use(cors({
@@ -194,6 +197,26 @@ app.post('/api/admin/session/create', authenticateToken, async (req, res) => {
     res.json({ sessionCode: result.rows[0].session_code });
   } catch (error) {
     console.error('Session creation error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get current active session for admin (protected route)
+app.get('/api/admin/session/current', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT * FROM sessions 
+       WHERE admin_id = $1 
+       AND is_active = true
+       AND created_at > NOW() - INTERVAL '24 hours'
+       ORDER BY created_at DESC LIMIT 1`,
+      [req.admin.id]
+    );
+    if (result.rows.length === 0) {
+      return res.json({ sessionCode: null });
+    }
+    res.json({ sessionCode: result.rows[0].session_code });
+  } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
@@ -619,7 +642,15 @@ app.post('/api/votes', async (req, res) => {
   const { questionId, optionId, userIp, type } = req.body;
   try {
     if (type === 'sub') {
-      // Vote for sub-question
+      // Vote for sub-question - check for duplicate first
+      const existingSubVote = await pool.query(
+        'SELECT id FROM sub_votes WHERE sub_question_id = $1 AND user_ip = $2',
+        [questionId, userIp]
+      );
+      if (existingSubVote.rows.length > 0) {
+        return res.status(400).json({ error: 'Already voted on this question' });
+      }
+
       await pool.query(
         'INSERT INTO sub_votes (sub_question_id, sub_option_id, user_ip) VALUES ($1, $2, $3)',
         [questionId, optionId, userIp]
@@ -643,7 +674,15 @@ app.post('/api/votes', async (req, res) => {
 
       io.emit('voteUpdate', { questionId, results, type: 'sub' });
     } else {
-      // Vote for main question
+      // Vote for main question - check for duplicate first
+      const existingVote = await pool.query(
+        'SELECT id FROM votes WHERE question_id = $1 AND user_ip = $2',
+        [questionId, userIp]
+      );
+      if (existingVote.rows.length > 0) {
+        return res.status(400).json({ error: 'Already voted on this question' });
+      }
+
       await pool.query(
         'INSERT INTO votes (question_id, option_id, user_ip) VALUES ($1, $2, $3)',
         [questionId, optionId, userIp]

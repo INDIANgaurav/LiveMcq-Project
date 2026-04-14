@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import { API_BASE as API_URL, SOCKET_URL } from '../config';
@@ -15,9 +15,26 @@ function UserPanel() {
   const [votedQuestions, setVotedQuestions] = useState(new Set()); // Track voted questions
   const [results, setResults] = useState([]);
   const [showResults, setShowResults] = useState(false);
-  const [userId] = useState('user-' + Math.random().toString(36).substr(2, 9));
-  const [socket, setSocket] = useState(null);
+  const [userId] = useState(() => {
+    // Persist userId in sessionStorage so it survives re-renders but resets on new tab
+    const existing = sessionStorage.getItem('mcq_user_id');
+    if (existing) return existing;
+    const newId = 'user-' + Math.random().toString(36).substring(2, 9);
+    sessionStorage.setItem('mcq_user_id', newId);
+    return newId;
+  });
+  const socketRef = useRef(null);
   const [sessionValid, setSessionValid] = useState(true);
+
+  // Refs to avoid stale closures in socket listeners
+  const questionRef = useRef(null);
+  const mainQuestionRef = useRef(null);
+  const votedQuestionsRef = useRef(new Set());
+
+  // Keep refs in sync with state
+  useEffect(() => { questionRef.current = question; }, [question]);
+  useEffect(() => { mainQuestionRef.current = mainQuestion; }, [mainQuestion]);
+  useEffect(() => { votedQuestionsRef.current = votedQuestions; }, [votedQuestions]);
 
   useEffect(() => {
     // Validate session code first
@@ -56,12 +73,13 @@ function UserPanel() {
 
     // Create socket connection
     const newSocket = io(SOCKET_URL, {
-      transports: ['websocket'],
+      transports: ['websocket', 'polling'], // polling fallback for restrictive networks
       reconnection: true,
       reconnectionDelay: 1000,
-      reconnectionAttempts: 5
+      reconnectionAttempts: 10,
+      timeout: 20000
     });
-    setSocket(newSocket);
+    socketRef.current = newSocket;
 
     fetchActiveQuestion();
 
@@ -71,8 +89,9 @@ function UserPanel() {
       setQuestion(newQuestion);
       setActiveView('main');
       setSubQuestion(null);
-      // Check if already voted on this question
-      const alreadyVoted = votedQuestions.has(`main-${newQuestion.id}`);
+      setDismissed(false);
+      // Use ref to avoid stale closure
+      const alreadyVoted = votedQuestionsRef.current.has(`main-${newQuestion.id}`);
       setHasVoted(alreadyVoted);
       setSelectedOption(null);
       setResults([]);
@@ -84,8 +103,9 @@ function UserPanel() {
       setSubQuestion(newSubQuestion);
       setQuestion(newSubQuestion);
       setActiveView('sub');
-      // Check if already voted on this sub-question
-      const alreadyVoted = votedQuestions.has(`sub-${newSubQuestion.id}`);
+      setDismissed(false);
+      // Use ref to avoid stale closure
+      const alreadyVoted = votedQuestionsRef.current.has(`sub-${newSubQuestion.id}`);
       setHasVoted(alreadyVoted);
       setSelectedOption(null);
       setResults([]);
@@ -94,7 +114,9 @@ function UserPanel() {
 
     // Listen for vote updates
     newSocket.on('voteUpdate', (data) => {
-      if (question && data.questionId === question.id) {
+      // Use ref to get latest question value (avoids stale closure)
+      const currentQuestion = questionRef.current;
+      if (currentQuestion && data.questionId === currentQuestion.id) {
         setResults(data.results);
         setShowResults(true);
       }
@@ -103,8 +125,9 @@ function UserPanel() {
     // Listen for question closed
     newSocket.on('questionClosed', () => {
       setSubQuestion(null);
-      if (mainQuestion) {
-        setQuestion(mainQuestion);
+      const currentMain = mainQuestionRef.current;
+      if (currentMain) {
+        setQuestion(currentMain);
         setActiveView('main');
       } else {
         setQuestion(null);
@@ -118,6 +141,7 @@ function UserPanel() {
 
     return () => {
       newSocket.disconnect();
+      socketRef.current = null;
     };
   }, []);
 
@@ -140,8 +164,12 @@ function UserPanel() {
         // Fetch existing results if any
         const resResults = await fetch(`${API_URL}/questions/${data.id}/results`);
         const resultsData = await resResults.json();
-        if (resultsData.some(r => r.votes > 0)) {
-          setResults(resultsData);
+        // resultsData has mainResults/subResults shape
+        const relevantResults = data.type === 'sub' 
+          ? (resultsData.subResults?.find(s => s.id === data.id)?.results || [])
+          : (resultsData.mainResults || []);
+        if (relevantResults.some(r => r.votes > 0)) {
+          setResults(relevantResults);
           setShowResults(true);
         }
       } else {
@@ -163,28 +191,38 @@ function UserPanel() {
     }
   };
 
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+
   const handleVote = async () => {
-    if (!selectedOption || hasVoted) return;
+    if (!selectedOption || hasVoted || isSubmitting) return;
 
-    await fetch(`${API_URL}/votes`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        questionId: question.id,
-        optionId: selectedOption,
-        userIp: userId,
-        type: question.type || 'main',
-      }),
-    });
+    setIsSubmitting(true);
+    try {
+      const res = await fetch(`${API_URL}/votes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          questionId: question.id,
+          optionId: selectedOption,
+          userIp: userId,
+          type: question.type || 'main',
+        }),
+      });
 
-    setHasVoted(true);
-    
-    // Track this question as voted
-    const questionKey = question.type === 'sub' ? `sub-${question.id}` : `main-${question.id}`;
-    setVotedQuestions(prev => {
-      const newSet = new Set([...prev, questionKey]);
-      return newSet;
-    });
+      if (!res.ok) throw new Error('Vote failed');
+
+      setHasVoted(true);
+      
+      // Track this question as voted
+      const questionKey = question.type === 'sub' ? `sub-${question.id}` : `main-${question.id}`;
+      setVotedQuestions(prev => new Set([...prev, questionKey]));
+    } catch (error) {
+      console.error('Vote submission failed:', error);
+      alert('Failed to submit vote. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Show invalid session message
@@ -255,7 +293,7 @@ function UserPanel() {
     );
   }
 
-  if (!question) {
+  if (!question || dismissed) {
     return (
       <div style={{ 
         textAlign: 'center', 
@@ -387,8 +425,36 @@ function UserPanel() {
           padding: '30px',
           borderRadius: '16px',
           marginBottom: '30px',
-          boxShadow: '0 10px 30px rgba(52, 152, 219, 0.2)'
+          boxShadow: '0 10px 30px rgba(52, 152, 219, 0.2)',
+          position: 'relative'
         }}>
+          {/* Dismiss button */}
+          <button
+            onClick={() => setDismissed(true)}
+            title="Skip this question"
+            style={{
+              position: 'absolute',
+              top: '12px',
+              right: '12px',
+              background: 'rgba(255,255,255,0.2)',
+              border: 'none',
+              borderRadius: '50%',
+              width: '32px',
+              height: '32px',
+              color: 'white',
+              fontSize: '16px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              lineHeight: 1,
+              transition: 'background 0.2s'
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.35)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}
+          >
+            ✕
+          </button>
           {question.mainHeading && (
             <div style={{ 
               fontSize: '15px', 
@@ -499,22 +565,22 @@ function UserPanel() {
             ))}
             <button
               onClick={handleVote}
-              disabled={!selectedOption}
+              disabled={!selectedOption || isSubmitting}
               style={{
                 width: '100%',
                 padding: '18px',
                 fontSize: '20px',
                 fontWeight: '700',
-                background: selectedOption ? '#3498db' : '#bdc3c7',
+                background: (selectedOption && !isSubmitting) ? '#3498db' : '#bdc3c7',
                 color: 'white',
                 border: 'none',
-                cursor: selectedOption ? 'pointer' : 'not-allowed',
+                cursor: (selectedOption && !isSubmitting) ? 'pointer' : 'not-allowed',
                 borderRadius: '16px',
                 marginTop: '25px',
-                boxShadow: selectedOption ? '0 8px 20px rgba(52, 152, 219, 0.3)' : 'none',
+                boxShadow: (selectedOption && !isSubmitting) ? '0 8px 20px rgba(52, 152, 219, 0.3)' : 'none',
               }}
             >
-              ✓ Submit Answer
+              {isSubmitting ? '⏳ Submitting...' : '✓ Submit Answer'}
             </button>
           </div>
         ) : showResults ? (

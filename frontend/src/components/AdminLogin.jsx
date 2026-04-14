@@ -37,9 +37,10 @@ function AdminLogin() {
         throw new Error(data.error || 'Something went wrong');
       }
 
-      // Store token and admin info
+      // Store token and admin info, clear any stale session from previous login
       localStorage.setItem('adminToken', data.token);
       localStorage.setItem('adminInfo', JSON.stringify(data.admin));
+      localStorage.removeItem('adminSessionCode'); // always start fresh on login
       
       navigate('/admin/dashboard');
     } catch (error) {

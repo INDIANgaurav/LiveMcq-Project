@@ -40,18 +40,33 @@ function AdminDashboard() {
       return;
     }
 
-    // Check if session exists (don't auto-create)
-    const existingSession = localStorage.getItem('adminSessionCode');
-    if (existingSession) {
-      setSessionCode(existingSession);
-    }
+    // Check if admin has a valid active session from backend (source of truth)
+    fetch(`${API_URL}/admin/session/current`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.sessionCode) {
+          localStorage.setItem('adminSessionCode', data.sessionCode);
+          setSessionCode(data.sessionCode);
+        } else {
+          localStorage.removeItem('adminSessionCode');
+          setSessionCode(null);
+        }
+      })
+      .catch(() => {
+        // Network error - fall back to localStorage
+        const cached = localStorage.getItem('adminSessionCode');
+        if (cached) setSessionCode(cached);
+      });
 
     // Create socket connection
     const newSocket = io(SOCKET_URL, {
-      transports: ['websocket'],
+      transports: ['websocket', 'polling'], // polling fallback for restrictive networks
       reconnection: true,
       reconnectionDelay: 1000,
-      reconnectionAttempts: 5
+      reconnectionAttempts: 10,
+      timeout: 20000
     });
     setSocket(newSocket);
 
@@ -368,6 +383,10 @@ function AdminDashboard() {
 
   const shareLink = async () => {
     const code = sessionCode || localStorage.getItem('adminSessionCode');
+    if (!code) {
+      setToast({ message: 'No active session. Please start a session first.', type: 'error' });
+      return;
+    }
     const link = `${window.location.origin}/session/${code}`;
     
     try {
