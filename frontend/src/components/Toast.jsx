@@ -28,7 +28,7 @@ function Toast({ message, type = 'success', onClose, duration = 3000 }) {
       padding: '16px 24px',
       borderRadius: '12px',
       boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
-      zIndex: 10000,
+      zIndex: 999999,
       display: 'flex',
       alignItems: 'center',
       gap: '12px',
