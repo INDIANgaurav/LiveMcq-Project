@@ -348,9 +348,8 @@ app.patch('/api/admin/questions/:id/toggle', authenticateToken, async (req, res)
     
     // If activating this question
     if (willBeActive) {
-      // Clear all votes for fresh voting
-      const deleteResult = await pool.query('DELETE FROM votes WHERE question_id = $1', [id]);
-      console.log(`[Toggle] Question ${id} activated - Deleted ${deleteResult.rowCount} votes`);
+      // Don't delete votes - keep history for admin
+      // activated_at timestamp will be updated to track new activation
       
       // Activate the question
       const result = await pool.query(
@@ -663,9 +662,9 @@ app.post('/api/votes', async (req, res) => {
   const { questionId, optionId, userIp, type } = req.body;
   try {
     if (type === 'sub') {
-      // Vote for sub-question - check for duplicate first
+      // Vote for sub-question - check if already voted in current activation
       const existingSubVote = await pool.query(
-        'SELECT id FROM sub_votes WHERE sub_question_id = $1 AND user_ip = $2',
+        'SELECT id FROM sub_votes WHERE sub_question_id = $1 AND user_ip = $2 AND created_at > (SELECT activated_at FROM sub_questions WHERE id = $1)',
         [questionId, userIp]
       );
       if (existingSubVote.rows.length > 0) {
@@ -695,9 +694,9 @@ app.post('/api/votes', async (req, res) => {
 
       io.emit('voteUpdate', { questionId, results, type: 'sub' });
     } else {
-      // Vote for main question - check for duplicate first
+      // Vote for main question - check if already voted in current activation
       const existingVote = await pool.query(
-        'SELECT id FROM votes WHERE question_id = $1 AND user_ip = $2',
+        'SELECT id FROM votes WHERE question_id = $1 AND user_ip = $2 AND created_at > (SELECT activated_at FROM questions WHERE id = $1)',
         [questionId, userIp]
       );
       if (existingVote.rows.length > 0) {
