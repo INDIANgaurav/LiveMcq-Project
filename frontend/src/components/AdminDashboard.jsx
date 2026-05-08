@@ -165,11 +165,55 @@ function AdminDashboard() {
   const toggleQuestion = async (id) => {
     // Prevent double-click
     if (togglingQuestions[id]) return;
-    setTogglingQuestions(prev => ({ ...prev, [id]: true }));
     
     const token = localStorage.getItem('adminToken');
     const question = questions.find(q => q.id === id);
     const wasActive = question.is_active;
+    
+    // If activating and question has votes, warn admin and offer to clear
+    if (!wasActive) {
+      // Check if question has existing votes
+      try {
+        const resResults = await fetch(`${API_URL}/questions/${id}/results`);
+        const results = await resResults.json();
+        const totalVotes = results.mainResults?.reduce((sum, opt) => sum + (opt.votes || 0), 0) || 0;
+        
+        if (totalVotes > 0) {
+          const confirmed = window.confirm(
+            `⚠️ This question has ${totalVotes} existing vote(s).\n\n` +
+            `Click OK to clear history and allow fresh voting.\n` +
+            `Click Cancel to keep existing votes (students who voted won't be able to vote again).`
+          );
+          
+          if (confirmed) {
+            // Clear history before activating
+            try {
+              await fetch(`${API_URL}/admin/questions/${id}/history`, { 
+                method: 'DELETE',
+                headers: { 
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json'
+                }
+              });
+              setToast({
+                message: 'Vote history cleared. Fresh voting enabled!',
+                type: 'success'
+              });
+            } catch (error) {
+              setToast({
+                message: 'Failed to clear history. Please try manually.',
+                type: 'error'
+              });
+              return;
+            }
+          }
+        }
+      } catch (error) {
+        // Ignore error, proceed with toggle
+      }
+    }
+    
+    setTogglingQuestions(prev => ({ ...prev, [id]: true }));
     
     // Optimistic UI update - immediately update the question state
     setQuestions(prev => prev.map(q => 
