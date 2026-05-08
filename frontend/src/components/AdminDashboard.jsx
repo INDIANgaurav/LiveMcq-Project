@@ -25,6 +25,7 @@ function AdminDashboard() {
   const [deleteProjectModal, setDeleteProjectModal] = useState(null);
   const [clearHistoryModal, setClearHistoryModal] = useState(null);
   const [voteWarningModal, setVoteWarningModal] = useState(null);
+  const [questionOptions, setQuestionOptions] = useState({});
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -149,6 +150,13 @@ function AdminDashboard() {
           }
         }
         
+        // Fetch options for all questions (for View Options button)
+        const optionsRes = await fetch(`${API_URL}/questions/${q.id}/results`);
+        const optionsData = await optionsRes.json();
+        if (optionsData.mainResults) {
+          setQuestionOptions((prev) => ({ ...prev, [q.id]: optionsData.mainResults }));
+        }
+        
         // Fetch sub-questions
         const subRes = await fetch(`${API_URL}/admin/questions/${q.id}/sub-questions`, {
           headers: { 'Authorization': `Bearer ${token}` }
@@ -171,8 +179,17 @@ function AdminDashboard() {
     const question = questions.find(q => q.id === id);
     const wasActive = question.is_active;
     
-    // If activating and question has votes, force admin to clear history first
+    // If activating, check if session is active
     if (!wasActive) {
+      const currentSessionCode = sessionCode || localStorage.getItem('adminSessionCode');
+      if (!currentSessionCode) {
+        setToast({
+          message: 'Please start a session first before raising questions!',
+          type: 'error'
+        });
+        return;
+      }
+      
       // Check if question has existing votes
       try {
         const resResults = await fetch(`${API_URL}/questions/${id}/results`);
@@ -488,8 +505,39 @@ function AdminDashboard() {
       maxWidth: '1000px', 
       margin: '0 auto', 
       padding: 'clamp(15px, 3vw, 20px)',
-      width: '100%'
+      width: '100%',
+      position: 'relative',
+      minHeight: '100vh'
     }}>
+      {/* Background Watermark */}
+      <div style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        pointerEvents: 'none',
+        zIndex: 0,
+        overflow: 'hidden'
+      }}>
+        <div style={{
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%) rotate(-25deg)',
+          fontSize: 'clamp(45px, 12vw, 180px)',
+          fontWeight: '900',
+          color: 'rgba(102, 126, 234, 0.08)',
+          whiteSpace: 'nowrap',
+          userSelect: 'none',
+          letterSpacing: 'clamp(4px, 2vw, 20px)'
+        }}>
+          FINSENSOR AI
+        </div>
+      </div>
+      
+      {/* Main Content */}
+      <div style={{ position: 'relative', zIndex: 1 }}>
       {toast && (
         <Toast
           message={toast.message}
@@ -1208,7 +1256,7 @@ function AdminDashboard() {
                         </div>
                       </div>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
                       {projectId !== 'no-project' && (
                         <button
                           onClick={(e) => {
@@ -1221,18 +1269,20 @@ function AdminDashboard() {
                             });
                           }}
                           style={{
-                            padding: '8px 12px',
+                            padding: '6px 10px',
                             backgroundColor: 'transparent',
                             color: '#f39c12',
                             border: '1px solid #f39c12',
-                            borderRadius: '8px',
+                            borderRadius: '6px',
                             cursor: 'pointer',
-                            fontSize: '14px',
+                            fontSize: '16px',
                             fontWeight: '600',
                             transition: 'all 0.3s',
                             display: 'flex',
                             alignItems: 'center',
-                            gap: '4px'
+                            justifyContent: 'center',
+                            minWidth: '36px',
+                            height: '36px'
                           }}
                           onMouseEnter={(e) => {
                             e.currentTarget.style.backgroundColor = '#f39c12';
@@ -1252,18 +1302,20 @@ function AdminDashboard() {
                           setDeleteProjectModal({ id: projectId, title: projectData.title });
                         }}
                         style={{
-                          padding: '8px 12px',
+                          padding: '6px 10px',
                           backgroundColor: 'transparent',
                           color: '#e74c3c',
                           border: '1px solid #e74c3c',
-                          borderRadius: '8px',
+                          borderRadius: '6px',
                           cursor: 'pointer',
-                          fontSize: '14px',
+                          fontSize: '16px',
                           fontWeight: '600',
                           transition: 'all 0.3s',
                           display: 'flex',
                           alignItems: 'center',
-                          gap: '4px'
+                          justifyContent: 'center',
+                          minWidth: '36px',
+                          height: '36px'
                         }}
                         onMouseEnter={(e) => {
                           e.currentTarget.style.backgroundColor = '#e74c3c';
@@ -1276,7 +1328,17 @@ function AdminDashboard() {
                       >
                         🗑️
                       </button>
-                      <span style={{ fontSize: '18px', color: '#667eea', transition: 'transform 0.3s', transform: expandedProjects[projectId] ? 'rotate(180deg)' : 'rotate(0deg)', marginLeft: '4px' }}>
+                      <span style={{ 
+                        fontSize: '14px', 
+                        color: '#667eea', 
+                        transition: 'transform 0.3s', 
+                        transform: expandedProjects[projectId] ? 'rotate(180deg)' : 'rotate(0deg)', 
+                        marginLeft: '2px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        minWidth: '20px'
+                      }}>
                         ▼
                       </span>
                     </div>
@@ -1332,34 +1394,35 @@ function AdminDashboard() {
                 {/* Action Buttons - Responsive Grid */}
                 <div style={{ 
                   display: 'grid', 
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-                  gap: '12px',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
+                  gap: '10px',
                   marginTop: '15px'
                 }}>
                   <button
                     onClick={() => toggleQuestion(q.id)}
                     disabled={togglingQuestions[q.id]}
                     style={{
-                      padding: '14px 20px',
+                      padding: '12px 16px',
                       backgroundColor: togglingQuestions[q.id] ? '#95a5a6' : (q.is_active ? '#e74c3c' : '#27ae60'),
                       color: 'white',
                       border: 'none',
                       cursor: togglingQuestions[q.id] ? 'not-allowed' : 'pointer',
-                      borderRadius: '12px',
+                      borderRadius: '10px',
                       fontWeight: '700',
-                      fontSize: '15px',
-                      boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                      fontSize: '14px',
+                      boxShadow: '0 3px 10px rgba(0,0,0,0.12)',
                       transition: 'all 0.3s',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      gap: '8px',
-                      opacity: togglingQuestions[q.id] ? 0.7 : 1
+                      gap: '6px',
+                      opacity: togglingQuestions[q.id] ? 0.7 : 1,
+                      whiteSpace: 'nowrap'
                     }}
                     onMouseEnter={(e) => !togglingQuestions[q.id] && (e.currentTarget.style.transform = 'translateY(-2px)')}
                     onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
                   >
-                    <span style={{ fontSize: '18px' }}>{togglingQuestions[q.id] ? '⏳' : (q.is_active ? '⏸' : '▶')}</span>
+                    <span style={{ fontSize: '16px' }}>{togglingQuestions[q.id] ? '⏳' : (q.is_active ? '⏸' : '▶')}</span>
                     {togglingQuestions[q.id] ? 'Wait...' : (q.is_active ? 'Stop' : 'Activate')}
                   </button>
                   
@@ -1367,52 +1430,80 @@ function AdminDashboard() {
                     onClick={() => navigate(`/admin/edit/${q.id}`)}
                     disabled={q.is_active}
                     style={{
-                      padding: '14px 20px',
+                      padding: '12px 16px',
                       backgroundColor: q.is_active ? '#bdc3c7' : '#f39c12',
                       color: 'white',
                       border: 'none',
                       cursor: q.is_active ? 'not-allowed' : 'pointer',
-                      borderRadius: '12px',
+                      borderRadius: '10px',
                       fontWeight: '700',
-                      fontSize: '15px',
-                      boxShadow: q.is_active ? 'none' : '0 4px 12px rgba(243, 156, 18, 0.3)',
+                      fontSize: '14px',
+                      boxShadow: q.is_active ? 'none' : '0 3px 10px rgba(243, 156, 18, 0.25)',
                       transition: 'all 0.3s',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      gap: '8px',
-                      opacity: q.is_active ? 0.6 : 1
+                      gap: '6px',
+                      opacity: q.is_active ? 0.6 : 1,
+                      whiteSpace: 'nowrap'
                     }}
                     onMouseEnter={(e) => !q.is_active && (e.currentTarget.style.transform = 'translateY(-2px)')}
                     onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
                   >
-                    <span style={{ fontSize: '18px' }}>✏️</span>
+                    <span style={{ fontSize: '16px' }}>✏️</span>
                     Edit
                   </button>
                   
                   <button
                     onClick={() => setExpandedQuestion(expandedQuestion === `history-${q.id}` ? null : `history-${q.id}`)}
                     style={{
-                      padding: '14px 20px',
+                      padding: '12px 16px',
                       backgroundColor: expandedQuestion === `history-${q.id}` ? '#16a085' : '#1abc9c',
                       color: 'white',
                       border: 'none',
                       cursor: 'pointer',
-                      borderRadius: '12px',
+                      borderRadius: '10px',
                       fontWeight: '700',
-                      fontSize: '15px',
-                      boxShadow: '0 4px 12px rgba(26, 188, 156, 0.3)',
+                      fontSize: '14px',
+                      boxShadow: '0 3px 10px rgba(26, 188, 156, 0.25)',
                       transition: 'all 0.3s',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      gap: '8px'
+                      gap: '6px',
+                      whiteSpace: 'nowrap'
                     }}
                     onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
                     onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
                   >
-                    <span style={{ fontSize: '18px' }}>📊</span>
+                    <span style={{ fontSize: '16px' }}>📊</span>
                     History
+                  </button>
+                  
+                  <button
+                    onClick={() => setExpandedQuestion(expandedQuestion === `options-${q.id}` ? null : `options-${q.id}`)}
+                    style={{
+                      padding: '12px 16px',
+                      backgroundColor: expandedQuestion === `options-${q.id}` ? '#2980b9' : '#3498db',
+                      color: 'white',
+                      border: 'none',
+                      cursor: 'pointer',
+                      borderRadius: '10px',
+                      fontWeight: '700',
+                      fontSize: '14px',
+                      boxShadow: '0 3px 10px rgba(52, 152, 219, 0.25)',
+                      transition: 'all 0.3s',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                      whiteSpace: 'nowrap'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
+                    onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+                  >
+                    <span style={{ fontSize: '16px' }}>👁️</span>
+                    View Options
                   </button>
                   
                   <button
@@ -1427,33 +1518,34 @@ function AdminDashboard() {
                         if (btn) {
                           btn.onclick = () => deleteQuestion(q.id);
                           btn.style.backgroundColor = '#c0392b';
-                          btn.innerHTML = '<span style="font-size: 18px">⚠️</span> Confirm';
+                          btn.innerHTML = '<span style="font-size: 16px">⚠️</span> Confirm';
                         }
                       }, 100);
                     }}
                     id={`delete-${q.id}`}
                     disabled={q.is_active}
                     style={{
-                      padding: '14px 20px',
+                      padding: '12px 16px',
                       backgroundColor: q.is_active ? '#bdc3c7' : '#e74c3c',
                       color: 'white',
                       border: 'none',
                       cursor: q.is_active ? 'not-allowed' : 'pointer',
-                      borderRadius: '12px',
+                      borderRadius: '10px',
                       fontWeight: '700',
-                      fontSize: '15px',
-                      boxShadow: q.is_active ? 'none' : '0 4px 12px rgba(231, 76, 60, 0.3)',
+                      fontSize: '14px',
+                      boxShadow: q.is_active ? 'none' : '0 3px 10px rgba(231, 76, 60, 0.25)',
                       transition: 'all 0.3s',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      gap: '8px',
-                      opacity: q.is_active ? 0.6 : 1
+                      gap: '6px',
+                      opacity: q.is_active ? 0.6 : 1,
+                      whiteSpace: 'nowrap'
                     }}
                     onMouseEnter={(e) => !q.is_active && (e.currentTarget.style.transform = 'translateY(-2px)')}
                     onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
                   >
-                    <span style={{ fontSize: '18px' }}>🗑️</span>
+                    <span style={{ fontSize: '16px' }}>🗑️</span>
                     Delete
                   </button>
                   
@@ -1487,26 +1579,27 @@ function AdminDashboard() {
                     }}
                     disabled={q.is_active}
                     style={{
-                      padding: '14px 20px',
+                      padding: '12px 16px',
                       backgroundColor: q.is_active ? '#bdc3c7' : '#9b59b6',
                       color: 'white',
                       border: 'none',
                       cursor: q.is_active ? 'not-allowed' : 'pointer',
-                      borderRadius: '12px',
+                      borderRadius: '10px',
                       fontWeight: '700',
-                      fontSize: '15px',
-                      boxShadow: q.is_active ? 'none' : '0 4px 12px rgba(155, 89, 182, 0.3)',
+                      fontSize: '14px',
+                      boxShadow: q.is_active ? 'none' : '0 3px 10px rgba(155, 89, 182, 0.25)',
                       transition: 'all 0.3s',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      gap: '8px',
-                      opacity: q.is_active ? 0.6 : 1
+                      gap: '6px',
+                      opacity: q.is_active ? 0.6 : 1,
+                      whiteSpace: 'nowrap'
                     }}
                     onMouseEnter={(e) => !q.is_active && (e.currentTarget.style.transform = 'translateY(-2px)')}
                     onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
                   >
-                    <span style={{ fontSize: '18px' }}>🔄</span>
+                    <span style={{ fontSize: '16px' }}>🔄</span>
                     Clear History
                   </button>
                 </div>
@@ -1554,6 +1647,60 @@ function AdminDashboard() {
               {/* Vote History Section */}
               {expandedQuestion === `history-${q.id}` && (
                 <VoteHistory questionId={q.id} />
+              )}
+
+              {/* View Options Section */}
+              {expandedQuestion === `options-${q.id}` && (
+                <div style={{
+                  marginTop: '20px',
+                  padding: '20px',
+                  backgroundColor: '#f8f9fa',
+                  borderRadius: '10px',
+                  border: '2px solid #3498db'
+                }}>
+                  <h4 style={{ margin: '0 0 15px 0', color: '#2c3e50', fontSize: '18px', fontWeight: '700' }}>
+                    📝 Question Options
+                  </h4>
+                  {questionOptions[q.id] ? (
+                    questionOptions[q.id]
+                      .sort((a, b) => a.id - b.id)
+                      .map((opt, idx) => (
+                        <div key={opt.id} style={{
+                          padding: '15px',
+                          marginBottom: '10px',
+                          backgroundColor: 'white',
+                          borderRadius: '8px',
+                          border: '2px solid #e0e0e0',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '12px'
+                        }}>
+                          <div style={{
+                            width: '40px',
+                            height: '40px',
+                            borderRadius: '50%',
+                            backgroundColor: '#3498db',
+                            color: 'white',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '18px',
+                            fontWeight: '700',
+                            flexShrink: 0
+                          }}>
+                            {String.fromCharCode(65 + idx)}
+                          </div>
+                          <div style={{ flex: 1 }}>
+                            <p style={{ margin: 0, fontSize: '16px', color: '#2c3e50', fontWeight: '600' }}>
+                              {opt.option_text}
+                            </p>
+                          </div>
+                        </div>
+                      ))
+                  ) : (
+                    <p style={{ color: '#7f8c8d', margin: 0 }}>Loading options...</p>
+                  )}
+                </div>
               )}
 
               {subQuestions[q.id] && subQuestions[q.id].length > 0 && (
@@ -2055,6 +2202,7 @@ function AdminDashboard() {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }

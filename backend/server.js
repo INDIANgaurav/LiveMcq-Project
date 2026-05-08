@@ -342,6 +342,18 @@ app.patch('/api/admin/questions/:id/toggle', authenticateToken, async (req, res)
     const wasActive = current.rows[0].is_active;
     const willBeActive = !wasActive;
 
+    // If activating, check if admin has an active session
+    if (willBeActive) {
+      const activeSession = await pool.query(
+        'SELECT session_code FROM sessions WHERE admin_id = $1 AND is_active = true AND expires_at > NOW() LIMIT 1',
+        [req.admin.id]
+      );
+      
+      if (activeSession.rows.length === 0) {
+        return res.status(403).json({ error: 'No active session. Please start a session first.' });
+      }
+    }
+
     // Deactivate all other questions for this admin
     await pool.query('UPDATE questions SET is_active = false WHERE admin_id = $1', [req.admin.id]);
     await pool.query('UPDATE sub_questions SET is_active = false');

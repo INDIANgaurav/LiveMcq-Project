@@ -397,8 +397,38 @@ function UserPanel() {
       maxWidth: '800px', 
       margin: '0 auto', 
       padding: 'clamp(20px, 5vw, 40px) clamp(15px, 3vw, 20px)',
-      minHeight: 'calc(100vh - 100px)'
+      minHeight: 'calc(100vh - 100px)',
+      position: 'relative'
     }} className="fade-in">
+      {/* Background Watermark */}
+      <div style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        pointerEvents: 'none',
+        zIndex: 0,
+        overflow: 'hidden'
+      }}>
+        <div style={{
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%) rotate(-25deg)',
+          fontSize: 'clamp(45px, 12vw, 180px)',
+          fontWeight: '900',
+          color: 'rgba(102, 126, 234, 0.08)',
+          whiteSpace: 'nowrap',
+          userSelect: 'none',
+          letterSpacing: 'clamp(4px, 2vw, 20px)'
+        }}>
+          FINSENSOR AI
+        </div>
+      </div>
+      
+      {/* Main Content */}
+      <div style={{ position: 'relative', zIndex: 1 }}>
       {/* Toggle buttons when both main and sub questions exist */}
       {mainQuestion && subQuestion && (
         <div style={{
@@ -707,6 +737,7 @@ function UserPanel() {
             <p style={{ fontSize: '18px', color: '#27ae60' }}>✓ Vote submitted! Waiting for results...</p>
           </div>
         )}
+      </div>
       </div>
     </div>
   );
