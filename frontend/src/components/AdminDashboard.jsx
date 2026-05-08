@@ -24,6 +24,7 @@ function AdminDashboard() {
   const [togglingQuestions, setTogglingQuestions] = useState({});
   const [deleteProjectModal, setDeleteProjectModal] = useState(null);
   const [clearHistoryModal, setClearHistoryModal] = useState(null);
+  const [voteWarningModal, setVoteWarningModal] = useState(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -162,7 +163,7 @@ function AdminDashboard() {
     }
   };
 
-  const toggleQuestion = async (id) => {
+  const toggleQuestion = async (id, clearHistory = null) => {
     // Prevent double-click
     if (togglingQuestions[id]) return;
     
@@ -171,7 +172,7 @@ function AdminDashboard() {
     const wasActive = question.is_active;
     
     // If activating and question has votes, warn admin and offer to clear
-    if (!wasActive) {
+    if (!wasActive && clearHistory === null) {
       // Check if question has existing votes
       try {
         const resResults = await fetch(`${API_URL}/questions/${id}/results`);
@@ -179,37 +180,35 @@ function AdminDashboard() {
         const totalVotes = results.mainResults?.reduce((sum, opt) => sum + (opt.votes || 0), 0) || 0;
         
         if (totalVotes > 0) {
-          const confirmed = window.confirm(
-            `⚠️ This question has ${totalVotes} existing vote(s).\n\n` +
-            `Click OK to clear history and allow fresh voting.\n` +
-            `Click Cancel to keep existing votes (students who voted won't be able to vote again).`
-          );
-          
-          if (confirmed) {
-            // Clear history before activating
-            try {
-              await fetch(`${API_URL}/admin/questions/${id}/history`, { 
-                method: 'DELETE',
-                headers: { 
-                  'Authorization': `Bearer ${token}`,
-                  'Content-Type': 'application/json'
-                }
-              });
-              setToast({
-                message: 'Vote history cleared. Fresh voting enabled!',
-                type: 'success'
-              });
-            } catch (error) {
-              setToast({
-                message: 'Failed to clear history. Please try manually.',
-                type: 'error'
-              });
-              return;
-            }
-          }
+          // Show custom modal instead of window.confirm
+          setVoteWarningModal({ id, totalVotes, heading: question.heading });
+          return; // Stop here, modal will call this function again with clearHistory decision
         }
       } catch (error) {
         // Ignore error, proceed with toggle
+      }
+    }
+    
+    // If clearHistory decision was made, execute it
+    if (clearHistory === true) {
+      try {
+        await fetch(`${API_URL}/admin/questions/${id}/history`, { 
+          method: 'DELETE',
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        setToast({
+          message: 'Vote history cleared. Fresh voting enabled!',
+          type: 'success'
+        });
+      } catch (error) {
+        setToast({
+          message: 'Failed to clear history. Please try manually.',
+          type: 'error'
+        });
+        return;
       }
     }
     
@@ -1938,6 +1937,147 @@ function AdminDashboard() {
                 onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#9b59b6'}
               >
                 Clear History
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Vote Warning Modal - Shown when activating question with existing votes */}
+      {voteWarningModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.7)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '20px'
+        }} onClick={() => setVoteWarningModal(null)}>
+          <div style={{
+            backgroundColor: 'white',
+            padding: 'clamp(25px, 5vw, 30px)',
+            borderRadius: '16px',
+            maxWidth: '500px',
+            width: '100%',
+            textAlign: 'center',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
+          }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ fontSize: 'clamp(45px, 10vw, 55px)', marginBottom: '15px' }}>⚠️</div>
+            <h2 style={{ 
+              color: '#2c3e50', 
+              marginBottom: '10px', 
+              fontSize: 'clamp(18px, 4vw, 22px)',
+              fontWeight: '700'
+            }}>
+              Existing Votes Found
+            </h2>
+            <p style={{ 
+              color: '#7f8c8d', 
+              marginBottom: '15px', 
+              fontSize: 'clamp(13px, 3vw, 14px)',
+              lineHeight: '1.5'
+            }}>
+              This question has
+            </p>
+            <p style={{
+              color: '#f39c12',
+              fontWeight: '700',
+              fontSize: 'clamp(20px, 5vw, 28px)',
+              marginBottom: '15px',
+              padding: '12px',
+              backgroundColor: '#fef5e7',
+              borderRadius: '8px'
+            }}>
+              {voteWarningModal.totalVotes} existing vote{voteWarningModal.totalVotes !== 1 ? 's' : ''}
+            </p>
+            <p style={{ 
+              color: '#7f8c8d', 
+              marginBottom: '25px', 
+              fontSize: 'clamp(12px, 2.8vw, 13px)',
+              lineHeight: '1.6'
+            }}>
+              Choose how to proceed:
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <button
+                onClick={() => {
+                  const modalData = voteWarningModal;
+                  setVoteWarningModal(null);
+                  toggleQuestion(modalData.id, true); // Clear history and activate
+                }}
+                style={{
+                  width: '100%',
+                  padding: 'clamp(12px, 3vw, 14px)',
+                  backgroundColor: '#27ae60',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '10px',
+                  cursor: 'pointer',
+                  fontSize: 'clamp(14px, 3vw, 15px)',
+                  fontWeight: '600',
+                  transition: 'all 0.3s',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#229954'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#27ae60'}
+              >
+                <span style={{ fontSize: '18px' }}>🔄</span>
+                <span>Clear History & Activate (Fresh Voting)</span>
+              </button>
+              <button
+                onClick={() => {
+                  const modalData = voteWarningModal;
+                  setVoteWarningModal(null);
+                  toggleQuestion(modalData.id, false); // Keep history and activate
+                }}
+                style={{
+                  width: '100%',
+                  padding: 'clamp(12px, 3vw, 14px)',
+                  backgroundColor: '#f39c12',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '10px',
+                  cursor: 'pointer',
+                  fontSize: 'clamp(14px, 3vw, 15px)',
+                  fontWeight: '600',
+                  transition: 'all 0.3s',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#e67e22'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#f39c12'}
+              >
+                <span style={{ fontSize: '18px' }}>📊</span>
+                <span>Keep Votes & Activate (No Re-voting)</span>
+              </button>
+              <button
+                onClick={() => setVoteWarningModal(null)}
+                style={{
+                  width: '100%',
+                  padding: 'clamp(10px, 2.5vw, 12px)',
+                  backgroundColor: '#95a5a6',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '10px',
+                  cursor: 'pointer',
+                  fontSize: 'clamp(13px, 2.8vw, 14px)',
+                  fontWeight: '600',
+                  transition: 'all 0.3s'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#7f8c8d'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#95a5a6'}
+              >
+                Cancel
               </button>
             </div>
           </div>
