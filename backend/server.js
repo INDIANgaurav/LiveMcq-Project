@@ -348,8 +348,9 @@ app.patch('/api/admin/questions/:id/toggle', authenticateToken, async (req, res)
     
     // If activating this question
     if (willBeActive) {
-      // Don't delete votes - keep history for admin
-      // activated_at timestamp will be updated to track new activation
+      // Always clear votes when activating (admin must clear history to re-raise)
+      const deleteResult = await pool.query('DELETE FROM votes WHERE question_id = $1', [id]);
+      console.log(`[Toggle] Question ${id} activated - Deleted ${deleteResult.rowCount} votes for fresh voting`);
       
       // Activate the question
       const result = await pool.query(
@@ -662,17 +663,10 @@ app.post('/api/votes', async (req, res) => {
   const { questionId, optionId, userIp, type } = req.body;
   try {
     if (type === 'sub') {
-      // Vote for sub-question - allow one vote per activation (re-raise allows fresh vote)
-      // Check if user already voted AFTER the current activation time
-      const subQuestion = await pool.query('SELECT activated_at FROM sub_questions WHERE id = $1', [questionId]);
-      if (subQuestion.rows.length === 0) {
-        return res.status(404).json({ error: 'Question not found' });
-      }
-      
-      const activatedAt = subQuestion.rows[0].activated_at;
+      // Vote for sub-question - simple duplicate check (votes cleared on re-raise)
       const existingSubVote = await pool.query(
-        'SELECT id FROM sub_votes WHERE sub_question_id = $1 AND user_ip = $2 AND created_at > $3',
-        [questionId, userIp, activatedAt]
+        'SELECT id FROM sub_votes WHERE sub_question_id = $1 AND user_ip = $2',
+        [questionId, userIp]
       );
       
       if (existingSubVote.rows.length > 0) {
@@ -702,17 +696,10 @@ app.post('/api/votes', async (req, res) => {
 
       io.emit('voteUpdate', { questionId, results, type: 'sub' });
     } else {
-      // Vote for main question - allow one vote per activation (re-raise allows fresh vote)
-      // Check if user already voted AFTER the current activation time
-      const question = await pool.query('SELECT activated_at FROM questions WHERE id = $1', [questionId]);
-      if (question.rows.length === 0) {
-        return res.status(404).json({ error: 'Question not found' });
-      }
-      
-      const activatedAt = question.rows[0].activated_at;
+      // Vote for main question - simple duplicate check (votes cleared on re-raise)
       const existingVote = await pool.query(
-        'SELECT id FROM votes WHERE question_id = $1 AND user_ip = $2 AND created_at > $3',
-        [questionId, userIp, activatedAt]
+        'SELECT id FROM votes WHERE question_id = $1 AND user_ip = $2',
+        [questionId, userIp]
       );
       
       if (existingVote.rows.length > 0) {

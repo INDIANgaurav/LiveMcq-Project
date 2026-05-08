@@ -163,7 +163,7 @@ function AdminDashboard() {
     }
   };
 
-  const toggleQuestion = async (id, clearHistory = null) => {
+  const toggleQuestion = async (id) => {
     // Prevent double-click
     if (togglingQuestions[id]) return;
     
@@ -171,8 +171,8 @@ function AdminDashboard() {
     const question = questions.find(q => q.id === id);
     const wasActive = question.is_active;
     
-    // If activating and question has votes, warn admin and offer to clear
-    if (!wasActive && clearHistory === null) {
+    // If activating and question has votes, force admin to clear history first
+    if (!wasActive) {
       // Check if question has existing votes
       try {
         const resResults = await fetch(`${API_URL}/questions/${id}/results`);
@@ -180,35 +180,12 @@ function AdminDashboard() {
         const totalVotes = results.mainResults?.reduce((sum, opt) => sum + (opt.votes || 0), 0) || 0;
         
         if (totalVotes > 0) {
-          // Show custom modal instead of window.confirm
+          // Show warning modal - admin MUST clear history
           setVoteWarningModal({ id, totalVotes, heading: question.heading });
-          return; // Stop here, modal will call this function again with clearHistory decision
+          return; // Stop here, modal will handle clearing
         }
       } catch (error) {
         // Ignore error, proceed with toggle
-      }
-    }
-    
-    // If clearHistory decision was made, execute it
-    if (clearHistory === true) {
-      try {
-        await fetch(`${API_URL}/admin/questions/${id}/history`, { 
-          method: 'DELETE',
-          headers: { 
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
-        });
-        setToast({
-          message: 'Vote history cleared. Fresh voting enabled!',
-          type: 'success'
-        });
-      } catch (error) {
-        setToast({
-          message: 'Failed to clear history. Please try manually.',
-          type: 'error'
-        });
-        return;
       }
     }
     
@@ -1943,7 +1920,7 @@ function AdminDashboard() {
         </div>
       )}
 
-      {/* Vote Warning Modal - Shown when activating question with existing votes */}
+      {/* Vote Warning Modal - Admin MUST clear history to re-raise */}
       {voteWarningModal && (
         <div style={{
           position: 'fixed',
@@ -1974,7 +1951,7 @@ function AdminDashboard() {
               fontSize: 'clamp(18px, 4vw, 22px)',
               fontWeight: '700'
             }}>
-              Existing Votes Found
+              Cannot Re-raise Question
             </h2>
             <p style={{ 
               color: '#7f8c8d', 
@@ -1985,12 +1962,12 @@ function AdminDashboard() {
               This question has
             </p>
             <p style={{
-              color: '#f39c12',
+              color: '#e74c3c',
               fontWeight: '700',
               fontSize: 'clamp(20px, 5vw, 28px)',
               marginBottom: '15px',
               padding: '12px',
-              backgroundColor: '#fef5e7',
+              backgroundColor: '#fee',
               borderRadius: '8px'
             }}>
               {voteWarningModal.totalVotes} existing vote{voteWarningModal.totalVotes !== 1 ? 's' : ''}
@@ -2001,14 +1978,37 @@ function AdminDashboard() {
               fontSize: 'clamp(12px, 2.8vw, 13px)',
               lineHeight: '1.6'
             }}>
-              Choose how to proceed:
+              You must clear the vote history first before re-raising this question.
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <button
-                onClick={() => {
+                onClick={async () => {
                   const modalData = voteWarningModal;
                   setVoteWarningModal(null);
-                  toggleQuestion(modalData.id, true); // Clear history and activate
+                  
+                  // Clear history first
+                  const token = localStorage.getItem('adminToken');
+                  try {
+                    await fetch(`${API_URL}/admin/questions/${modalData.id}/history`, { 
+                      method: 'DELETE',
+                      headers: { 
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                      }
+                    });
+                    setToast({
+                      message: 'Vote history cleared!',
+                      type: 'success'
+                    });
+                    
+                    // Now activate the question
+                    setTimeout(() => toggleQuestion(modalData.id), 500);
+                  } catch (error) {
+                    setToast({
+                      message: 'Failed to clear history. Please try manually.',
+                      type: 'error'
+                    });
+                  }
                 }}
                 style={{
                   width: '100%',
@@ -2029,36 +2029,8 @@ function AdminDashboard() {
                 onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#229954'}
                 onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#27ae60'}
               >
-                <span style={{ fontSize: '18px' }}>🔄</span>
-                <span>Clear History & Activate (Fresh Voting)</span>
-              </button>
-              <button
-                onClick={() => {
-                  const modalData = voteWarningModal;
-                  setVoteWarningModal(null);
-                  toggleQuestion(modalData.id, false); // Keep history and activate
-                }}
-                style={{
-                  width: '100%',
-                  padding: 'clamp(12px, 3vw, 14px)',
-                  backgroundColor: '#f39c12',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '10px',
-                  cursor: 'pointer',
-                  fontSize: 'clamp(14px, 3vw, 15px)',
-                  fontWeight: '600',
-                  transition: 'all 0.3s',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px'
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#e67e22'}
-                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#f39c12'}
-              >
-                <span style={{ fontSize: '18px' }}>📊</span>
-                <span>Keep Votes & Activate (No Re-voting)</span>
+             
+                <span>Clear History & Activate</span>
               </button>
               <button
                 onClick={() => setVoteWarningModal(null)}
