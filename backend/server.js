@@ -662,11 +662,19 @@ app.post('/api/votes', async (req, res) => {
   const { questionId, optionId, userIp, type } = req.body;
   try {
     if (type === 'sub') {
-      // Vote for sub-question - check if already voted in current activation
+      // Vote for sub-question - allow one vote per activation (re-raise allows fresh vote)
+      // Check if user already voted AFTER the current activation time
+      const subQuestion = await pool.query('SELECT activated_at FROM sub_questions WHERE id = $1', [questionId]);
+      if (subQuestion.rows.length === 0) {
+        return res.status(404).json({ error: 'Question not found' });
+      }
+      
+      const activatedAt = subQuestion.rows[0].activated_at;
       const existingSubVote = await pool.query(
-        'SELECT id FROM sub_votes WHERE sub_question_id = $1 AND user_ip = $2 AND created_at > (SELECT activated_at FROM sub_questions WHERE id = $1)',
-        [questionId, userIp]
+        'SELECT id FROM sub_votes WHERE sub_question_id = $1 AND user_ip = $2 AND created_at > $3',
+        [questionId, userIp, activatedAt]
       );
+      
       if (existingSubVote.rows.length > 0) {
         return res.status(400).json({ error: 'Already voted on this question' });
       }
@@ -694,11 +702,19 @@ app.post('/api/votes', async (req, res) => {
 
       io.emit('voteUpdate', { questionId, results, type: 'sub' });
     } else {
-      // Vote for main question - check if already voted in current activation
+      // Vote for main question - allow one vote per activation (re-raise allows fresh vote)
+      // Check if user already voted AFTER the current activation time
+      const question = await pool.query('SELECT activated_at FROM questions WHERE id = $1', [questionId]);
+      if (question.rows.length === 0) {
+        return res.status(404).json({ error: 'Question not found' });
+      }
+      
+      const activatedAt = question.rows[0].activated_at;
       const existingVote = await pool.query(
-        'SELECT id FROM votes WHERE question_id = $1 AND user_ip = $2 AND created_at > (SELECT activated_at FROM questions WHERE id = $1)',
-        [questionId, userIp]
+        'SELECT id FROM votes WHERE question_id = $1 AND user_ip = $2 AND created_at > $3',
+        [questionId, userIp, activatedAt]
       );
+      
       if (existingVote.rows.length > 0) {
         return res.status(400).json({ error: 'Already voted on this question' });
       }
