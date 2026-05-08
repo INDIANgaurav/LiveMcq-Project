@@ -30,11 +30,13 @@ function UserPanel() {
   const questionRef = useRef(null);
   const mainQuestionRef = useRef(null);
   const votedQuestionsRef = useRef(new Set());
+  const hasVotedRef = useRef(false);
 
   // Keep refs in sync with state
   useEffect(() => { questionRef.current = question; }, [question]);
   useEffect(() => { mainQuestionRef.current = mainQuestion; }, [mainQuestion]);
   useEffect(() => { votedQuestionsRef.current = votedQuestions; }, [votedQuestions]);
+  useEffect(() => { hasVotedRef.current = hasVoted; }, [hasVoted]);
 
   useEffect(() => {
     // Validate session code first
@@ -87,7 +89,6 @@ function UserPanel() {
     let pollInterval = null;
 
     newSocket.on('disconnect', () => {
-      console.log('[Socket] Disconnected, starting fallback polling');
       pollInterval = setInterval(async () => {
         try {
           const res = await fetch(`${API_URL}/questions/active`);
@@ -128,7 +129,6 @@ function UserPanel() {
 
     // Stop polling when socket reconnects
     newSocket.on('connect', () => {
-      console.log('[Socket] Reconnected, stopping fallback polling');
       if (pollInterval) {
         clearInterval(pollInterval);
         pollInterval = null;
@@ -143,12 +143,17 @@ function UserPanel() {
       setQuestion(newQuestion);
       setActiveView('main');
       setSubQuestion(null);
-      // Use ref to avoid stale closure
-      const alreadyVoted = votedQuestionsRef.current.has(`main-${newQuestion.id}`);
-      setHasVoted(alreadyVoted);
+      // Reset voting state for this question (allow re-voting if admin raises same question again)
+      const questionKey = `main-${newQuestion.id}`;
+      setVotedQuestions(prev => {
+        const updated = new Set(prev);
+        updated.delete(questionKey); // Remove from voted set to allow fresh voting
+        return updated;
+      });
+      setHasVoted(false);
       setSelectedOption(null);
       setResults([]);
-      setShowResults(alreadyVoted); // Show results if already voted
+      setShowResults(false);
     });
 
     // Listen for new sub-questions
@@ -156,12 +161,17 @@ function UserPanel() {
       setSubQuestion(newSubQuestion);
       setQuestion(newSubQuestion);
       setActiveView('sub');
-      // Use ref to avoid stale closure
-      const alreadyVoted = votedQuestionsRef.current.has(`sub-${newSubQuestion.id}`);
-      setHasVoted(alreadyVoted);
+      // Reset voting state for this sub-question
+      const questionKey = `sub-${newSubQuestion.id}`;
+      setVotedQuestions(prev => {
+        const updated = new Set(prev);
+        updated.delete(questionKey);
+        return updated;
+      });
+      setHasVoted(false);
       setSelectedOption(null);
       setResults([]);
-      setShowResults(alreadyVoted); // Show results if already voted
+      setShowResults(false);
     });
 
     // Listen for vote updates
@@ -170,13 +180,16 @@ function UserPanel() {
       const currentQuestion = questionRef.current;
       if (currentQuestion && data.questionId === currentQuestion.id) {
         setResults(data.results);
-        setShowResults(true);
+        // Only show results if user has already voted
+        // Don't force results screen on users who haven't voted yet
+        if (hasVotedRef.current) {
+          setShowResults(true);
+        }
       }
     });
 
     // Listen for question closed
     newSocket.on('questionClosed', () => {
-      console.log('[Socket] questionClosed received');
       setQuestion(null);
       setMainQuestion(null);
       setSubQuestion(null);
@@ -264,6 +277,9 @@ function UserPanel() {
       // Track this question as voted
       const questionKey = question.type === 'sub' ? `sub-${question.id}` : `main-${question.id}`;
       setVotedQuestions(prev => new Set([...prev, questionKey]));
+      
+      // Show results immediately after voting (socket event will update live data)
+      setShowResults(true);
     } catch (error) {
       console.error('Vote submission failed:', error);
       alert('Failed to submit vote. Please try again.');

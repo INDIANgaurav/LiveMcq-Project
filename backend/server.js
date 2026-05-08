@@ -333,25 +333,45 @@ app.get('/api/admin/questions', authenticateToken, async (req, res) => {
 app.patch('/api/admin/questions/:id/toggle', authenticateToken, async (req, res) => {
   const { id } = req.params;
   try {
-    // Deactivate all questions for this admin
-    await pool.query('UPDATE questions SET is_active = false WHERE admin_id = $1 AND id != $2', [req.admin.id, id]);
+    // Get current state
+    const current = await pool.query('SELECT is_active FROM questions WHERE id = $1 AND admin_id = $2', [id, req.admin.id]);
+    if (current.rows.length === 0) {
+      return res.status(404).json({ error: 'Question not found' });
+    }
+
+    const wasActive = current.rows[0].is_active;
+    const willBeActive = !wasActive;
+
+    // Deactivate all other questions for this admin
+    await pool.query('UPDATE questions SET is_active = false WHERE admin_id = $1', [req.admin.id]);
     await pool.query('UPDATE sub_questions SET is_active = false');
     
-    const result = await pool.query(
-      'UPDATE questions SET is_active = NOT is_active, activated_at = CASE WHEN NOT is_active THEN NOW() ELSE NULL END WHERE id = $1 AND admin_id = $2 RETURNING *',
-      [id, req.admin.id]
-    );
-    
-    // Broadcast to all users
-    if (result.rows[0].is_active) {
+    // If activating this question
+    if (willBeActive) {
+      // Clear all votes for fresh voting
+      const deleteResult = await pool.query('DELETE FROM votes WHERE question_id = $1', [id]);
+      console.log(`[Toggle] Question ${id} activated - Deleted ${deleteResult.rowCount} votes`);
+      
+      // Activate the question
+      const result = await pool.query(
+        'UPDATE questions SET is_active = true, activated_at = NOW() WHERE id = $1 AND admin_id = $2 RETURNING *',
+        [id, req.admin.id]
+      );
+      
       const options = await pool.query('SELECT * FROM options WHERE question_id = $1', [id]);
       io.emit('newQuestion', { ...result.rows[0], options: options.rows, type: 'main' });
+      
+      return res.json(result.rows[0]);
     } else {
-      console.log('[Socket] Emitting questionClosed for question:', id);
+      // Deactivating - just update
+      const result = await pool.query(
+        'UPDATE questions SET is_active = false, activated_at = NULL WHERE id = $1 AND admin_id = $2 RETURNING *',
+        [id, req.admin.id]
+      );
+      
       io.emit('questionClosed');
+      return res.json(result.rows[0]);
     }
-    
-    res.json(result.rows[0]);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
