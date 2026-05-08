@@ -1664,8 +1664,8 @@ function AdminDashboard() {
                   <h4 style={{ margin: '0 0 15px 0', color: '#2c3e50', fontSize: '18px', fontWeight: '700' }}>
                     📝 Question Options
                   </h4>
-                  {questionOptions[q.id] ? (
-                    questionOptions[q.id]
+                  {q.options && q.options.length > 0 ? (
+                    q.options
                       .sort((a, b) => a.id - b.id)
                       .map((opt, idx) => (
                         <div key={opt.id} style={{
@@ -1701,7 +1701,7 @@ function AdminDashboard() {
                         </div>
                       ))
                   ) : (
-                    <p style={{ color: '#7f8c8d', margin: 0 }}>Loading options...</p>
+                    <p style={{ color: '#7f8c8d', margin: 0 }}>No options available</p>
                   )}
                 </div>
               )}
