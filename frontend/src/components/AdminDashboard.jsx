@@ -136,6 +136,7 @@ function AdminDashboard() {
       }
 
       const data = await res.json();
+
       setQuestions(Array.isArray(data) ? data : []);
 
       // Store options from questions data (already included from backend)
@@ -224,7 +225,8 @@ function AdminDashboard() {
       });
       
       if (!response.ok) {
-        throw new Error('API call failed');
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'API call failed');
       }
       
     } catch (error) {
@@ -233,7 +235,7 @@ function AdminDashboard() {
         q.id === id ? { ...q, is_active: wasActive } : q
       ));
       setToast({
-        message: 'Failed to toggle question. Please try again.',
+        message: error.message || 'Failed to toggle question. Please try again.',
         type: 'error'
       });
     }

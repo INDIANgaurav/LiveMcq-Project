@@ -361,7 +361,7 @@ app.patch('/api/admin/questions/:id/toggle', authenticateToken, async (req, res)
     // If activating, check if admin has an active session
     if (willBeActive) {
       const activeSession = await pool.query(
-        'SELECT session_code FROM sessions WHERE admin_id = $1 AND is_active = true AND expires_at > NOW() LIMIT 1',
+        'SELECT session_code FROM sessions WHERE admin_id = $1 AND is_active = true AND created_at > NOW() - INTERVAL \'24 hours\' LIMIT 1',
         [req.admin.id]
       );
       
