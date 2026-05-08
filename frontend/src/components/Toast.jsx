@@ -21,14 +21,14 @@ function Toast({ message, type = 'success', onClose, duration = 3000 }) {
   return (
     <div style={{
       position: 'fixed',
-      top: '20px',
+      top: '80px',
       right: '20px',
       backgroundColor: style.bg,
       color: 'white',
       padding: '16px 24px',
       borderRadius: '12px',
       boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
-      zIndex: 999999,
+      zIndex: 100000,
       display: 'flex',
       alignItems: 'center',
       gap: '12px',
