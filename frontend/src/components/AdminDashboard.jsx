@@ -138,7 +138,14 @@ function AdminDashboard() {
       const data = await res.json();
       setQuestions(Array.isArray(data) ? data : []);
 
+      // Store options from questions data (already included from backend)
+      const optionsMap = {};
       for (const q of (Array.isArray(data) ? data : [])) {
+        if (q.options) {
+          optionsMap[q.id] = q.options;
+        }
+        
+        // Fetch live results only for active questions
         if (q.is_active) {
           const resResults = await fetch(`${API_URL}/questions/${q.id}/results`);
           const results = await resResults.json();
@@ -150,13 +157,6 @@ function AdminDashboard() {
           }
         }
         
-        // Fetch options for all questions (for View Options button)
-        const optionsRes = await fetch(`${API_URL}/questions/${q.id}/results`);
-        const optionsData = await optionsRes.json();
-        if (optionsData.mainResults) {
-          setQuestionOptions((prev) => ({ ...prev, [q.id]: optionsData.mainResults }));
-        }
-        
         // Fetch sub-questions
         const subRes = await fetch(`${API_URL}/admin/questions/${q.id}/sub-questions`, {
           headers: { 'Authorization': `Bearer ${token}` }
@@ -166,6 +166,9 @@ function AdminDashboard() {
           setSubQuestions((prev) => ({ ...prev, [q.id]: subData }));
         }
       }
+      
+      // Set all options at once
+      setQuestionOptions(optionsMap);
     } catch (error) {
       setQuestions([]);
     }

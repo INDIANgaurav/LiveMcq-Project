@@ -315,7 +315,8 @@ app.post('/api/admin/questions', authenticateToken, questionUploadLimiter, async
 // Admin: Get all questions (only for logged-in admin)
 app.get('/api/admin/questions', authenticateToken, async (req, res) => {
   try {
-    const result = await pool.query(
+    // Fetch all questions for this admin
+    const questionsResult = await pool.query(
       `SELECT q.*, p.title as project_title, p.date as project_date, p.description as project_description 
        FROM questions q 
        LEFT JOIN projects p ON q.project_id = p.id 
@@ -323,7 +324,22 @@ app.get('/api/admin/questions', authenticateToken, async (req, res) => {
        ORDER BY p.date DESC, q.question_number ASC, q.created_at DESC`,
       [req.admin.id]
     );
-    res.json(result.rows);
+    
+    // Fetch options for each question
+    const questionsWithOptions = await Promise.all(
+      questionsResult.rows.map(async (question) => {
+        const optionsResult = await pool.query(
+          'SELECT id, option_text FROM options WHERE question_id = $1 ORDER BY id ASC',
+          [question.id]
+        );
+        return {
+          ...question,
+          options: optionsResult.rows
+        };
+      })
+    );
+    
+    res.json(questionsWithOptions);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
