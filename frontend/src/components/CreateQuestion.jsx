@@ -32,7 +32,7 @@ function CreateQuestion() {
       }
 
       const token = localStorage.getItem('adminToken');
-      await fetch(`${API_URL}/admin/questions`, {
+      const response = await fetch(`${API_URL}/admin/questions`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -40,6 +40,29 @@ function CreateQuestion() {
         },
         body: JSON.stringify({ heading, description, options: validOptions, projectId }),
       });
+      const data = await response.json();
+
+      if (!response.ok) {
+        setToast({ message: data.error || 'Failed to create question!', type: 'error' });
+        return; // Stop here, don't update cache or navigate!
+      }
+      
+      // 🚀 CACHE UPDATE: Only happens IF API was successful
+      if (data && data.question) {
+        try {
+          const cachedData = sessionStorage.getItem('adminDashboardCache');
+          if (cachedData) {
+            const parsed = JSON.parse(cachedData);
+            if (parsed.questions) {
+              parsed.questions.push({
+                ...data.question,
+                options: validOptions.map((opt, i) => ({ id: Date.now() + i, option_text: opt }))
+              });
+              sessionStorage.setItem('adminDashboardCache', JSON.stringify(parsed));
+            }
+          }
+        } catch (e) {}
+      }
     } else {
       const validMainOptions = options.filter((opt) => opt.trim());
       const validSubQuestions = subQuestions
@@ -56,7 +79,7 @@ function CreateQuestion() {
       }
 
       const token = localStorage.getItem('adminToken');
-      await fetch(`${API_URL}/admin/questions`, {
+      const response = await fetch(`${API_URL}/admin/questions`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -70,10 +93,35 @@ function CreateQuestion() {
           subQuestions: validSubQuestions.length > 0 ? validSubQuestions : undefined
         }),
       });
+      const data = await response.json();
+      
+      if (!response.ok) {
+        setToast({ message: data.error || 'Failed to create question!', type: 'error' });
+        return; // Stop here, don't update cache or navigate!
+      }
+      
+      // 🚀 CACHE UPDATE: Only happens IF API was successful
+      if (data && data.question) {
+        try {
+          const cachedData = sessionStorage.getItem('adminDashboardCache');
+          if (cachedData) {
+            const parsed = JSON.parse(cachedData);
+            if (parsed.questions) {
+              parsed.questions.push({
+                ...data.question,
+                options: validMainOptions.length > 0 ? validMainOptions.map((opt, i) => ({ id: Date.now() + i, option_text: opt })) : []
+              });
+              sessionStorage.setItem('adminDashboardCache', JSON.stringify(parsed));
+            }
+          }
+        } catch (e) {
+          // ignore cache errors
+        }
+      }
     }
 
     setToast({ message: 'Question created successfully!', type: 'success' });
-    setTimeout(() => navigate('/admin/dashboard'), 1500);
+    setTimeout(() => navigate('/admin/dashboard'), 500); // reduced timeout for snappier feel
   };
 
   return (

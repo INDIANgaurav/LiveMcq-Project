@@ -51,52 +51,87 @@ function ProjectDetail() {
     if (!token) return;
 
     try {
-      const res = await fetch(`${API_URL}/admin/questions`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      
-      if (res.status === 401 || res.status === 403) {
-        localStorage.clear();
-        navigate('/admin/login');
-        return;
+      // 🚀 SWR CACHING: Instantly load data from cache if available
+      const cacheKey = `projectDetailCache_${projectId}`;
+      const cachedData = sessionStorage.getItem(cacheKey);
+      if (cachedData) {
+        try {
+          const parsed = JSON.parse(cachedData);
+          if (parsed.questions) setQuestions(parsed.questions);
+          if (parsed.subQuestions) setSubQuestions(parsed.subQuestions);
+          if (parsed.projectInfo) setProjectInfo(parsed.projectInfo);
+        } catch (e) {}
       }
 
-      if (!res.ok) {
-        return;
-      }
+      // 🚀 OPTIMIZATION: Fetch everything concurrently instead of sequentially
+      const [questionsRes, allSubRes] = await Promise.all([
+        fetch(`${API_URL}/admin/questions`, { headers: { 'Authorization': `Bearer ${token}` } }).catch(() => null),
+        fetch(`${API_URL}/admin/all-sub-questions`, { headers: { 'Authorization': `Bearer ${token}` } }).catch(() => null)
+      ]);
 
-      const data = await res.json();
-      const filteredQuestions = data.filter(q => 
-        (projectId === 'no-project' && !q.project_id) || 
-        (q.project_id && q.project_id.toString() === projectId)
-      );
-      
-      setQuestions(filteredQuestions);
-      
-      if (filteredQuestions.length > 0) {
-        setProjectInfo({
-          title: filteredQuestions[0].project_title || 'No Project',
-          date: filteredQuestions[0].project_date
-        });
-      }
-
-      for (const q of filteredQuestions) {
-        if (q.is_active) {
-          const resResults = await fetch(`${API_URL}/questions/${q.id}/results`);
-          const results = await resResults.json();
-          if (results.mainResults) {
-            setLiveResults((prev) => ({ ...prev, [q.id]: results.mainResults }));
+      // 1. Handle Questions & Project Info
+      let questionsData = [];
+      if (questionsRes) {
+        if (questionsRes.status === 401 || questionsRes.status === 403) {
+          localStorage.clear();
+          navigate('/admin/login');
+          return;
+        }
+        if (questionsRes.ok) {
+          const data = await questionsRes.json();
+          questionsData = data.filter(q => 
+            (projectId === 'no-project' && !q.project_id) || 
+            (q.project_id && q.project_id.toString() === projectId)
+          );
+          
+          setQuestions(questionsData);
+          
+          if (questionsData.length > 0) {
+            setProjectInfo({
+              title: questionsData[0].project_title || 'No Project',
+              date: questionsData[0].project_date
+            });
           }
         }
-        
-        const subRes = await fetch(`${API_URL}/admin/questions/${q.id}/sub-questions`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        const subData = await subRes.json();
-        if (subData.length > 0) {
-          setSubQuestions((prev) => ({ ...prev, [q.id]: subData }));
-        }
       }
+
+      // 2. Handle Sub-Questions
+      let finalSubMap = {};
+      if (allSubRes && allSubRes.ok) {
+        const allSubData = await allSubRes.json();
+        allSubData.forEach(sub => {
+          if (!finalSubMap[sub.question_id]) finalSubMap[sub.question_id] = [];
+          finalSubMap[sub.question_id].push(sub);
+        });
+        setSubQuestions(finalSubMap);
+      }
+
+      // 3. Handle Live Results (concurrently)
+      if (questionsData.length > 0) {
+        const activeQuestions = questionsData.filter(q => q.is_active);
+        const liveResultPromises = activeQuestions.map(async (q) => {
+          const res = await fetch(`${API_URL}/questions/${q.id}/results`).catch(() => null);
+          if (res && res.ok) {
+            const results = await res.json();
+            if (results.mainResults) {
+              setLiveResults(prev => ({ ...prev, [q.id]: results.mainResults }));
+            }
+          }
+        });
+        await Promise.all(liveResultPromises);
+      }
+
+      // 🚀 Save to cache for the next time (so returning to page is instant)
+      try {
+        sessionStorage.setItem(`projectDetailCache_${projectId}`, JSON.stringify({
+          questions: questionsData,
+          subQuestions: finalSubMap,
+          projectInfo: questionsData.length > 0 ? {
+            title: questionsData[0].project_title || 'No Project',
+            date: questionsData[0].project_date
+          } : undefined
+        }));
+      } catch (e) {}
     } catch (error) {
       // Error fetching questions
     }

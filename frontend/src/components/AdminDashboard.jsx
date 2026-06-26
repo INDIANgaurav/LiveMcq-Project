@@ -34,6 +34,32 @@ function AdminDashboard() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  // 🚀 RESTORE SCROLL POSITION: If user came back from Edit page, scroll them exactly to where they were!
+  useEffect(() => {
+    // Force browser not to natively restore scroll on normal reloads
+    if ('scrollRestoration' in history) {
+      history.scrollRestoration = 'manual';
+    }
+
+    if (questions.length > 0) {
+      const savedScroll = sessionStorage.getItem('dashboardScrollPosition');
+      if (savedScroll !== null) {
+        // We came from the Edit button! Scroll to saved position
+        sessionStorage.removeItem('dashboardScrollPosition'); // Clear it immediately so it only happens once
+        setTimeout(() => {
+          window.scrollTo({ top: parseInt(savedScroll, 10), behavior: 'instant' });
+        }, 100);
+      } else {
+        // Normal visit/reload without clicking Edit: stay at top!
+        // Only do this once on mount
+        if (!window.hasScrolledToTop) {
+          window.scrollTo(0, 0);
+          window.hasScrolledToTop = true;
+        }
+      }
+    }
+  }, [questions]);
+
   useEffect(() => {
     // Check if admin is logged in
     const token = localStorage.getItem('adminToken');
@@ -111,65 +137,96 @@ function AdminDashboard() {
     if (!token) return;
 
     try {
-      // Fetch projects first
-      const projectsRes = await fetch(`${API_URL}/admin/projects`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (projectsRes.ok) {
-        const projectsData = await projectsRes.json();
-        setProjects(projectsData);
+      // 🚀 SWR CACHING: Instantly load data from cache if available so UI doesn't flash "0 Questions"
+      const cachedData = sessionStorage.getItem('adminDashboardCache');
+      if (cachedData) {
+        try {
+          const parsed = JSON.parse(cachedData);
+          if (parsed.projects) setProjects(parsed.projects);
+          if (parsed.questions) setQuestions(parsed.questions);
+          if (parsed.questionOptions) setQuestionOptions(parsed.questionOptions);
+          if (parsed.subQuestions) setSubQuestions(parsed.subQuestions);
+        } catch (e) {
+          // ignore cache errors
+        }
+      }
+
+      // 🚀 OPTIMIZATION: Fetch everything concurrently instead of sequentially
+      const [projectsRes, questionsRes, allSubRes] = await Promise.all([
+        fetch(`${API_URL}/admin/projects`, { headers: { 'Authorization': `Bearer ${token}` } }).catch(() => null),
+        fetch(`${API_URL}/admin/questions`, { headers: { 'Authorization': `Bearer ${token}` } }).catch(() => null),
+        fetch(`${API_URL}/admin/all-sub-questions`, { headers: { 'Authorization': `Bearer ${token}` } }).catch(() => null)
+      ]);
+
+      // 1. Handle Projects
+      let finalProjects = [];
+      if (projectsRes && projectsRes.ok) {
+        finalProjects = await projectsRes.json();
+        setProjects(finalProjects);
       }
       
-      const res = await fetch(`${API_URL}/admin/questions`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      
-      if (res.status === 401 || res.status === 403) {
-        localStorage.clear();
-        navigate('/admin/login');
-        return;
+      // 2. Handle Questions
+      let questionsData = [];
+      if (questionsRes) {
+        if (questionsRes.status === 401 || questionsRes.status === 403) {
+          localStorage.clear();
+          navigate('/admin/login');
+          return;
+        }
+        if (questionsRes.ok) {
+          questionsData = await questionsRes.json();
+          if (!Array.isArray(questionsData)) questionsData = [];
+          
+          setQuestions(questionsData);
+          
+          const optionsMap = {};
+          questionsData.forEach(q => {
+            if (q.options) optionsMap[q.id] = q.options;
+          });
+          setQuestionOptions(optionsMap);
+        } else {
+          setQuestions([]);
+        }
       }
 
-      if (!res.ok) {
-        setQuestions([]);
-        return;
-      }
-
-      const data = await res.json();
-
-      setQuestions(Array.isArray(data) ? data : []);
-
-      // Store options from questions data (already included from backend)
-      const optionsMap = {};
-      for (const q of (Array.isArray(data) ? data : [])) {
-        if (q.options) {
-          optionsMap[q.id] = q.options;
-        }
-        
-        // Fetch live results only for active questions
-        if (q.is_active) {
-          const resResults = await fetch(`${API_URL}/questions/${q.id}/results`);
-          const results = await resResults.json();
-          if (results.mainResults) {
-            setLiveResults((prev) => ({ ...prev, [q.id]: results.mainResults }));
-          }
-          if (results.subResults) {
-            setSubResults((prev) => ({ ...prev, [q.id]: results.subResults }));
-          }
-        }
-        
-        // Fetch sub-questions
-        const subRes = await fetch(`${API_URL}/admin/questions/${q.id}/sub-questions`, {
-          headers: { 'Authorization': `Bearer ${token}` }
+      // 3. Handle Sub-Questions
+      let finalSubMap = {};
+      if (allSubRes && allSubRes.ok) {
+        const allSubData = await allSubRes.json();
+        allSubData.forEach(sub => {
+          if (!finalSubMap[sub.question_id]) finalSubMap[sub.question_id] = [];
+          finalSubMap[sub.question_id].push(sub);
         });
-        const subData = await subRes.json();
-        if (subData.length > 0) {
-          setSubQuestions((prev) => ({ ...prev, [q.id]: subData }));
-        }
+        setSubQuestions(finalSubMap);
       }
-      
-      // Set all options at once
-      setQuestionOptions(optionsMap);
+
+      // 4. Handle Live Results (concurrently for all active questions)
+      if (questionsData.length > 0) {
+        const activeQuestions = questionsData.filter(q => q.is_active);
+        const liveResultPromises = activeQuestions.map(async (q) => {
+          const res = await fetch(`${API_URL}/questions/${q.id}/results`).catch(() => null);
+          if (res && res.ok) {
+            const results = await res.json();
+            if (results.mainResults) {
+              setLiveResults(prev => ({ ...prev, [q.id]: results.mainResults }));
+            }
+            if (results.subResults) {
+              setSubResults(prev => ({ ...prev, [q.id]: results.subResults }));
+            }
+          }
+        });
+        await Promise.all(liveResultPromises);
+      }
+
+      // 🚀 Save to cache for the next time (so returning to page is instant)
+      try {
+        sessionStorage.setItem('adminDashboardCache', JSON.stringify({
+          projects: finalProjects.length > 0 ? finalProjects : undefined,
+          questions: questionsData,
+          questionOptions: questionsData.reduce((acc, q) => { if(q.options) acc[q.id] = q.options; return acc; }, {}),
+          subQuestions: finalSubMap
+        }));
+      } catch (e) {}
     } catch (error) {
       setQuestions([]);
     }
@@ -1432,7 +1489,10 @@ function AdminDashboard() {
                   </button>
                   
                   <button
-                    onClick={() => navigate(`/admin/edit/${q.id}`)}
+                    onClick={() => {
+                      sessionStorage.setItem('dashboardScrollPosition', window.scrollY);
+                      navigate(`/admin/edit/${q.id}`);
+                    }}
                     disabled={q.is_active}
                     style={{
                       padding: '12px 16px',

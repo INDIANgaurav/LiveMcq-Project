@@ -20,7 +20,7 @@ const pool = new Pool(
         },
         max: 5,
         idleTimeoutMillis: 30000,
-        connectionTimeoutMillis: 5000,
+        connectionTimeoutMillis: 15000, // Increased timeout for Neon DB wake up
       }
     : {
         // ✅ Local development
@@ -60,7 +60,7 @@ const initDB = async () => {
     CREATE TABLE IF NOT EXISTS projects (
       id SERIAL PRIMARY KEY,
       admin_id INTEGER REFERENCES admins(id) ON DELETE CASCADE,
-      title VARCHAR(255) NOT NULL,
+      title TEXT NOT NULL,
       description TEXT,
       date DATE,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -72,7 +72,7 @@ const initDB = async () => {
       id SERIAL PRIMARY KEY,
       admin_id INTEGER REFERENCES admins(id) ON DELETE CASCADE,
       project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
-      heading VARCHAR(255) NOT NULL,
+      heading TEXT NOT NULL,
       description TEXT,
       question_number INTEGER,
       is_active BOOLEAN DEFAULT false,
@@ -85,7 +85,7 @@ const initDB = async () => {
     CREATE TABLE IF NOT EXISTS options (
       id SERIAL PRIMARY KEY,
       question_id INTEGER REFERENCES questions(id) ON DELETE CASCADE,
-      option_text VARCHAR(255) NOT NULL
+      option_text TEXT NOT NULL
     )
   `);
 
@@ -104,7 +104,7 @@ const initDB = async () => {
     CREATE TABLE IF NOT EXISTS sub_options (
       id SERIAL PRIMARY KEY,
       sub_question_id INTEGER REFERENCES sub_questions(id) ON DELETE CASCADE,
-      option_text VARCHAR(255) NOT NULL
+      option_text TEXT NOT NULL
     )
   `);
 

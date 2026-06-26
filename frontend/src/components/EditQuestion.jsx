@@ -22,11 +22,50 @@ function EditQuestion() {
 
   const fetchQuestion = async () => {
     try {
+      // 🚀 SWR CACHING: Instantly load data from cache if available
+      const cachedData = sessionStorage.getItem('adminDashboardCache');
+      let foundInCache = false;
+
+      if (cachedData) {
+        try {
+          const parsed = JSON.parse(cachedData);
+          const qData = parsed.questions?.find(q => q.id.toString() === id.toString());
+          
+          if (qData) {
+            setHeading(qData.heading);
+            setDescription(qData.description || '');
+            
+            const qOptions = parsed.questionOptions?.[id];
+            if (qOptions && qOptions.length > 0) {
+              setOptions(qOptions.map(opt => opt.option_text));
+            }
+            
+            const subQs = parsed.subQuestions?.[id];
+            if (subQs && subQs.length > 0) {
+              setQuestionType('multi');
+              setSubQuestions(subQs.map(sq => ({
+                text: sq.sub_question_text,
+                options: (sq.options || []).map(opt => opt.option_text)
+              })));
+            } else {
+              setQuestionType('simple');
+            }
+            
+            setLoading(false);
+            foundInCache = true;
+          }
+        } catch (e) {}
+      }
+
       const token = localStorage.getItem('adminToken');
       const res = await fetch(`${API_URL}/admin/questions/${id}/details`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await res.json();
+      
+      // If we didn't find it in cache, we MUST update the UI using fetch response.
+      // If we DID find it, we just quietly update the state in the background.
+      if (!foundInCache || (data && data.heading)) {
       
       setHeading(data.heading);
       setDescription(data.description || '');
@@ -48,6 +87,7 @@ function EditQuestion() {
       }
       
       setLoading(false);
+      } // CLOSE IF BLOCK HERE
     } catch (error) {
       setToast({ message: 'Error loading question', type: 'error' });
       setTimeout(() => navigate('/admin/dashboard'), 2000);
@@ -65,7 +105,7 @@ function EditQuestion() {
       }
 
       const token = localStorage.getItem('adminToken');
-      await fetch(`${API_URL}/admin/questions/${id}`, {
+      const response = await fetch(`${API_URL}/admin/questions/${id}`, {
         method: 'PUT',
         headers: { 
           'Content-Type': 'application/json',
@@ -73,6 +113,10 @@ function EditQuestion() {
         },
         body: JSON.stringify({ heading, description, options: validOptions }),
       });
+      if (!response.ok) {
+        setToast({ message: 'Failed to update question', type: 'error' });
+        return;
+      }
     } else {
       const validMainOptions = options.filter((opt) => opt.trim());
       const validSubQuestions = subQuestions
@@ -89,7 +133,7 @@ function EditQuestion() {
       }
 
       const token = localStorage.getItem('adminToken');
-      await fetch(`${API_URL}/admin/questions/${id}`, {
+      const response = await fetch(`${API_URL}/admin/questions/${id}`, {
         method: 'PUT',
         headers: { 
           'Content-Type': 'application/json',
@@ -102,9 +146,61 @@ function EditQuestion() {
           subQuestions: validSubQuestions.length > 0 ? validSubQuestions : undefined
         }),
       });
+      if (!response.ok) {
+        setToast({ message: 'Failed to update question', type: 'error' });
+        return;
+      }
+    }
+    setToast({ message: 'Question updated successfully!', type: 'success' });
+    
+    // 🚀 Update cache directly so dashboard shows new data instantly without loading or old data flashes
+    const updateCache = (cacheKey) => {
+      try {
+        const cacheStr = sessionStorage.getItem(cacheKey);
+        if (!cacheStr) return;
+        const cache = JSON.parse(cacheStr);
+        const qIndex = cache.questions?.findIndex(q => q.id.toString() === id.toString());
+        
+        if (qIndex !== undefined && qIndex >= 0) {
+          cache.questions[qIndex].heading = heading;
+          cache.questions[qIndex].description = description;
+          
+          if (!cache.questionOptions) cache.questionOptions = {};
+          if (!cache.subQuestions) cache.subQuestions = {};
+          
+          if (questionType === 'simple') {
+            const validOpts = options.filter(opt => opt.trim());
+            cache.questionOptions[id] = validOpts.map((text, i) => ({ id: `temp_${i}`, option_text: text }));
+            delete cache.subQuestions[id];
+          } else {
+            const validMainOpts = options.filter(opt => opt.trim());
+            if (validMainOpts.length > 0) {
+              cache.questionOptions[id] = validMainOpts.map((text, i) => ({ id: `temp_m_${i}`, option_text: text }));
+            } else {
+              delete cache.questionOptions[id];
+            }
+            
+            const validSub = subQuestions.filter(sq => sq.text.trim()).map((sq, i) => ({
+              id: `temp_sq_${i}`,
+              question_id: parseInt(id),
+              sub_question_text: sq.text,
+              options: sq.options.filter(opt => opt.trim()).map((text, j) => ({ id: `temp_so_${j}`, option_text: text }))
+            }));
+            cache.subQuestions[id] = validSub;
+          }
+          sessionStorage.setItem(cacheKey, JSON.stringify(cache));
+        }
+      } catch (e) {}
+    };
+
+    updateCache('adminDashboardCache');
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const key = sessionStorage.key(i);
+      if (key && key.startsWith('projectDetailCache_')) {
+        updateCache(key);
+      }
     }
 
-    setToast({ message: 'Question updated successfully!', type: 'success' });
     setTimeout(() => navigate('/admin/dashboard'), 1500);
   };
 
