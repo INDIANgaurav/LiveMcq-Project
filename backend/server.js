@@ -442,6 +442,31 @@ app.patch('/api/admin/sub-questions/:id/toggle', async (req, res) => {
   }
 });
 
+// Admin: Get ALL sub-questions and sub-options in one go
+app.get('/api/admin/all-sub-questions', authenticateToken, async (req, res) => {
+  try {
+    const subQResult = await pool.query('SELECT * FROM sub_questions ORDER BY order_index');
+    const subOResult = await pool.query('SELECT * FROM sub_options');
+
+    // Group options by sub_question_id
+    const optionsMap = {};
+    subOResult.rows.forEach(opt => {
+      if (!optionsMap[opt.sub_question_id]) optionsMap[opt.sub_question_id] = [];
+      optionsMap[opt.sub_question_id].push(opt);
+    });
+
+    // Map sub-questions and attach their options
+    const allSubData = subQResult.rows.map(subQ => ({
+      ...subQ,
+      options: optionsMap[subQ.id] || []
+    }));
+
+    res.json(allSubData);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Get sub-questions for a question (protected)
 app.get('/api/admin/questions/:id/sub-questions', authenticateToken, async (req, res) => {
   const { id } = req.params;
