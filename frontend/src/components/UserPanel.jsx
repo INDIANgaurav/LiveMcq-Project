@@ -508,14 +508,14 @@ function UserPanel() {
       
       <div style={{
         backgroundColor: 'white',
-        padding: '40px',
+        padding: 'clamp(20px, 5vw, 40px)',
         borderRadius: '24px',
         boxShadow: '0 20px 60px rgba(0,0,0,0.15)'
       }}>
         <div style={{
           background: question.type === 'sub' ? '#9b59b6' : '#3498db',
           color: 'white',
-          padding: '30px',
+          padding: 'clamp(20px, 5vw, 30px)',
           borderRadius: '16px',
           marginBottom: '30px',
           boxShadow: '0 10px 30px rgba(52, 152, 219, 0.2)',
@@ -548,29 +548,18 @@ function UserPanel() {
           >
             ✕
           </button>
-          {question.mainHeading && (
-            <div style={{ 
-              fontSize: '15px', 
-              opacity: 0.95, 
-              marginBottom: '12px',
-              fontWeight: '500'
-            }}>
-              📌 {question.mainHeading}
-            </div>
-          )}
           <h1 style={{ 
             margin: '0 0 12px 0', 
-            fontSize: '32px',
+            fontSize: 'clamp(22px, 6vw, 32px)',
             fontWeight: '700',
             textShadow: '2px 2px 4px rgba(0,0,0,0.1)'
           }}>
-            {question.type === 'sub' && '📌 '}
             {question.heading}
           </h1>
           {question.description && (
             <p style={{ 
               margin: 0, 
-              fontSize: '18px', 
+              fontSize: 'clamp(15px, 4vw, 18px)', 
               opacity: 0.95,
               lineHeight: '1.6'
             }}>
@@ -582,9 +571,9 @@ function UserPanel() {
         {!hasVoted && !showResults ? (
           <div>
             <h3 style={{ 
-              marginBottom: '25px', 
+              marginBottom: '20px', 
               color: '#2c3e50',
-              fontSize: '22px',
+              fontSize: 'clamp(18px, 5vw, 22px)',
               fontWeight: '600'
             }}>
               Select your answer:
@@ -597,7 +586,7 @@ function UserPanel() {
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    padding: '20px',
+                    padding: 'clamp(12px, 3vw, 20px)',
                     border: selectedOption === opt.id ? '3px solid #3498db' : '2px solid #e0e0e0',
                     borderRadius: '16px',
                     cursor: 'pointer',
@@ -632,26 +621,29 @@ function UserPanel() {
                     }}
                   />
                   <span style={{ 
-                    fontSize: '18px', 
+                    fontSize: 'clamp(15px, 4vw, 18px)', 
                     fontWeight: '600',
-                    color: '#2c3e50'
+                    color: '#2c3e50',
+                    display: 'flex',
+                    alignItems: 'center',
+                    width: '100%'
                   }}>
                     <span style={{
-                      display: 'inline-block',
-                      width: '32px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      minWidth: '32px',
                       height: '32px',
                       backgroundColor: selectedOption === opt.id ? '#3498db' : '#e0e0e0',
                       color: selectedOption === opt.id ? 'white' : '#666',
                       borderRadius: '50%',
-                      textAlign: 'center',
-                      lineHeight: '32px',
                       marginRight: '12px',
                       fontWeight: 'bold',
                       fontSize: '16px'
                     }}>
                       {String.fromCharCode(65 + idx)}
                     </span>
-                    {opt.option_text}
+                    <span style={{ flex: 1, wordBreak: 'break-word' }}>{opt.option_text || opt}</span>
                   </span>
                 </label>
               </div>
@@ -720,17 +712,7 @@ function UserPanel() {
                 </div>
               </div>
             ))}
-            <div style={{
-              marginTop: '25px',
-              padding: '15px',
-              backgroundColor: '#e8f8f5',
-              borderRadius: '8px',
-              textAlign: 'center'
-            }}>
-              <p style={{ margin: 0, color: '#16a085', fontWeight: '500' }}>
-                🔄 Results update in real-time as others vote!
-              </p>
-            </div>
+
           </div>
         ) : (
           <div style={{ textAlign: 'center', padding: '20px' }}>

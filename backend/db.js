@@ -41,7 +41,7 @@ const initDB = async () => {
       name VARCHAR(255) NOT NULL,
       email VARCHAR(255) UNIQUE NOT NULL,
       password VARCHAR(255) NOT NULL,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
@@ -52,7 +52,7 @@ const initDB = async () => {
       admin_id INTEGER REFERENCES admins(id) ON DELETE CASCADE,
       admin_name VARCHAR(255),
       is_active BOOLEAN DEFAULT true,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
@@ -63,7 +63,7 @@ const initDB = async () => {
       title TEXT NOT NULL,
       description TEXT,
       date DATE,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
@@ -76,8 +76,8 @@ const initDB = async () => {
       description TEXT,
       question_number INTEGER,
       is_active BOOLEAN DEFAULT false,
-      activated_at TIMESTAMP,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      activated_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
@@ -96,7 +96,7 @@ const initDB = async () => {
       sub_question_text TEXT NOT NULL,
       order_index INTEGER DEFAULT 0,
       is_active BOOLEAN DEFAULT false,
-      activated_at TIMESTAMP
+      activated_at TIMESTAMPTZ
     )
   `);
 
@@ -114,7 +114,7 @@ const initDB = async () => {
       question_id INTEGER REFERENCES questions(id) ON DELETE CASCADE,
       option_id INTEGER REFERENCES options(id) ON DELETE CASCADE,
       user_ip VARCHAR(50),
-      voted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      voted_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
@@ -124,7 +124,7 @@ const initDB = async () => {
       sub_question_id INTEGER REFERENCES sub_questions(id) ON DELETE CASCADE,
       sub_option_id INTEGER REFERENCES sub_options(id) ON DELETE CASCADE,
       user_ip VARCHAR(50),
-      voted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      voted_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
     )
   `);
 

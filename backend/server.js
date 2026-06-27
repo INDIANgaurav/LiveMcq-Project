@@ -166,35 +166,38 @@ app.post('/api/admin/session/create', authenticateToken, async (req, res) => {
   try {
     const admin = await pool.query('SELECT name FROM admins WHERE id = $1', [req.admin.id]);
     
-    // Check if admin has ANY session in last 24 hours (ignore is_active status)
+    // Get the most recent session
     const existingSession = await pool.query(
       `SELECT * FROM sessions 
        WHERE admin_id = $1 
-       AND created_at > NOW() - INTERVAL '24 hours'
        ORDER BY created_at DESC LIMIT 1`,
       [req.admin.id]
     );
     
-    // If session exists within 24 hours, reactivate and return it
+    // Check if session exists and is within 24 hours using JS Date (consistent with verify logic)
     if (existingSession.rows.length > 0) {
       const session = existingSession.rows[0];
+      const createdAt = new Date(session.created_at);
+      const now = new Date();
+      const hoursDiff = (now - createdAt) / (1000 * 60 * 60);
       
-      // Make sure it's active (in case it was deactivated)
-      await pool.query(
-        'UPDATE sessions SET is_active = true WHERE id = $1',
-        [session.id]
-      );
-      
-      return res.json({ sessionCode: session.session_code });
+      if (hoursDiff <= 24) {
+        // Reactivate and return it if it's within 24 hours
+        await pool.query(
+          'UPDATE sessions SET is_active = true WHERE id = $1',
+          [session.id]
+        );
+        return res.json({ sessionCode: session.session_code, createdAt: session.created_at });
+      }
     }
     
-    // Create new session only if no session exists in last 24 hours
+    // Create new session only if no session exists or last one is older than 24 hours
     const sessionCode = generateSessionCode();
     const result = await pool.query(
-      'INSERT INTO sessions (session_code, admin_id, admin_name) VALUES ($1, $2, $3) RETURNING *',
+      'INSERT INTO sessions (session_code, admin_id, admin_name, is_active) VALUES ($1, $2, $3, true) RETURNING *',
       [sessionCode, req.admin.id, admin.rows[0].name]
     );
-    res.json({ sessionCode: result.rows[0].session_code });
+    res.json({ sessionCode: result.rows[0].session_code, createdAt: result.rows[0].created_at });
   } catch (error) {
     console.error('Session creation error:', error);
     res.status(500).json({ error: error.message });
@@ -208,14 +211,24 @@ app.get('/api/admin/session/current', authenticateToken, async (req, res) => {
       `SELECT * FROM sessions 
        WHERE admin_id = $1 
        AND is_active = true
-       AND created_at > NOW() - INTERVAL '24 hours'
        ORDER BY created_at DESC LIMIT 1`,
       [req.admin.id]
     );
+    
     if (result.rows.length === 0) {
       return res.json({ sessionCode: null });
     }
-    res.json({ sessionCode: result.rows[0].session_code });
+    
+    const session = result.rows[0];
+    const createdAt = new Date(session.created_at);
+    const now = new Date();
+    const hoursDiff = (now - createdAt) / (1000 * 60 * 60);
+    
+    if (hoursDiff > 24) {
+      return res.json({ sessionCode: null });
+    }
+    
+    res.json({ sessionCode: session.session_code, createdAt: session.created_at });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -428,6 +441,7 @@ app.patch('/api/admin/sub-questions/:id/toggle', async (req, res) => {
       const question = await pool.query('SELECT * FROM questions WHERE id = $1', [result.rows[0].question_id]);
       io.emit('newSubQuestion', { 
         ...result.rows[0], 
+        heading: result.rows[0].sub_question_text,
         options: options.rows,
         mainHeading: question.rows[0].heading,
         type: 'sub'
@@ -874,6 +888,33 @@ app.get('/api/questions/:id/results', async (req, res) => {
     );
 
     res.json({ mainResults: results, subResults });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Clear question vote history (protected)
+app.delete('/api/admin/questions/:id/history', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  try {
+    // Check if question exists and belongs to admin
+    const question = await pool.query('SELECT id FROM questions WHERE id = $1 AND admin_id = $2', [id, req.admin.id]);
+    if (question.rows.length === 0) {
+      return res.status(404).json({ error: 'Question not found' });
+    }
+
+    // Delete main question votes
+    await pool.query('DELETE FROM votes WHERE question_id = $1', [id]);
+    
+    // Delete sub-question votes
+    await pool.query(`
+      DELETE FROM sub_votes 
+      WHERE sub_question_id IN (
+        SELECT id FROM sub_questions WHERE question_id = $1
+      )
+    `, [id]);
+
+    res.json({ success: true, message: 'Vote history cleared successfully' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

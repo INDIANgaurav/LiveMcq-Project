@@ -110,9 +110,7 @@ html {
     letter-spacing: 0.5px;
   }
   
-  body {
-    padding: 0 8px;
-  }
+  /* Removed body padding for full width on mobile */
   
   /* Force single column on very small screens */
   [style*="grid-template-columns"] {
@@ -128,9 +126,7 @@ html {
     right: 12px;
   }
   
-  body {
-    padding: 0 12px;
-  }
+  /* Removed body padding for full width on mobile */
 }
 
 /* Medium devices (tablets, 768px and up) */

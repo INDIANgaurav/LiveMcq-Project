@@ -14,6 +14,8 @@ function AdminDashboard() {
   const [expandedQuestion, setExpandedQuestion] = useState(null);
   const [socket, setSocket] = useState(null);
   const [sessionCode, setSessionCode] = useState(null);
+  const [sessionCreatedAt, setSessionCreatedAt] = useState(null);
+  const [timeLeftStr, setTimeLeftStr] = useState('');
   const [showSessionModal, setShowSessionModal] = useState(false);
   const [toast, setToast] = useState(null);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
@@ -77,15 +79,23 @@ function AdminDashboard() {
         if (data.sessionCode) {
           localStorage.setItem('adminSessionCode', data.sessionCode);
           setSessionCode(data.sessionCode);
+          if (data.createdAt) {
+            setSessionCreatedAt(data.createdAt);
+            localStorage.setItem('adminSessionCreatedAt', data.createdAt);
+          }
         } else {
           localStorage.removeItem('adminSessionCode');
+          localStorage.removeItem('adminSessionCreatedAt');
           setSessionCode(null);
+          setSessionCreatedAt(null);
         }
       })
       .catch(() => {
         // Network error - fall back to localStorage
         const cached = localStorage.getItem('adminSessionCode');
+        const cachedTime = localStorage.getItem('adminSessionCreatedAt');
         if (cached) setSessionCode(cached);
+        if (cachedTime) setSessionCreatedAt(cachedTime);
       });
 
     // Create socket connection
@@ -131,6 +141,36 @@ function AdminDashboard() {
       newSocket.disconnect();
     };
   }, [navigate]);
+
+  // Timer Effect
+  useEffect(() => {
+    if (!sessionCode || !sessionCreatedAt) {
+      setTimeLeftStr('');
+      return;
+    }
+    
+    const updateTimer = () => {
+      const createdAtDate = new Date(sessionCreatedAt);
+      const now = new Date();
+      const diffMs = now - createdAtDate;
+      const hoursDiff = diffMs / (1000 * 60 * 60);
+      const msLeft = (24 * 60 * 60 * 1000) - diffMs;
+      
+      if (msLeft <= 0) {
+        setTimeLeftStr('Expired');
+        return;
+      }
+      
+      const h = Math.floor(msLeft / (1000 * 60 * 60));
+      const m = Math.floor((msLeft % (1000 * 60 * 60)) / (1000 * 60));
+      const s = Math.floor((msLeft % (1000 * 60)) / 1000);
+      setTimeLeftStr(`${h}h ${m}m ${s}s`);
+    };
+    
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+    return () => clearInterval(interval);
+  }, [sessionCode, sessionCreatedAt]);
 
   const fetchQuestions = async () => {
     const token = localStorage.getItem('adminToken');
@@ -313,6 +353,32 @@ function AdminDashboard() {
   };
 
   const toggleSubQuestion = async (subId, questionId) => {
+    // Check if activating and if there are existing votes
+    const isActivating = !subQuestions[questionId]?.find(sq => sq.id === subId)?.is_active;
+    
+    if (isActivating) {
+      try {
+        const resResults = await fetch(`${API_URL}/questions/${questionId}/results`);
+        const results = await resResults.json();
+        
+        const subResult = results.subResults?.find(r => r.id === subId);
+        const totalVotes = subResult?.results?.reduce((sum, opt) => sum + (opt.votes || 0), 0) || 0;
+        
+        if (totalVotes > 0) {
+          // Show warning modal - admin MUST clear history
+          setVoteWarningModal({ 
+            id: questionId, // we need questionId to clear history
+            subId: subId, 
+            totalVotes, 
+            heading: subResult.sub_question_text || 'Sub Question' 
+          });
+          return; // Stop here, modal will handle clearing
+        }
+      } catch (error) {
+        // Ignore error, proceed with toggle
+      }
+    }
+
     // Toggle the sub-question
     await fetch(`${API_URL}/admin/sub-questions/${subId}/toggle`, { method: 'PATCH' });
     
@@ -473,7 +539,9 @@ function AdminDashboard() {
 
       const data = await res.json();
       localStorage.setItem('adminSessionCode', data.sessionCode);
+      if (data.createdAt) localStorage.setItem('adminSessionCreatedAt', data.createdAt);
       setSessionCode(data.sessionCode);
+      if (data.createdAt) setSessionCreatedAt(data.createdAt);
       setShowSessionModal(true);
     } catch (error) {
       // Session creation failed
@@ -542,7 +610,9 @@ function AdminDashboard() {
 
       if (response.ok) {
         localStorage.removeItem('adminSessionCode');
+        localStorage.removeItem('adminSessionCreatedAt');
         setSessionCode(null);
+        setSessionCreatedAt(null);
         setToast({
           message: 'Session ended successfully!',
           type: 'success'
@@ -705,7 +775,7 @@ function AdminDashboard() {
       )}
 
       <div style={{
-        marginBottom: '20px',
+        marginBottom: '28px',
         padding: isMobile ? '8px' : '16px',
         background: 'linear-gradient(135deg, rgba(102, 126, 234, 0.85) 0%, rgba(118, 75, 162, 0.85) 100%)',
         backdropFilter: 'blur(20px)',
@@ -755,6 +825,17 @@ function AdminDashboard() {
             }}>
               {sessionCode || '------'}
             </span>
+            {sessionCode && timeLeftStr && (
+              <span style={{
+                fontSize: isMobile ? '11px' : '12px',
+                color: 'rgba(255,255,255,0.85)',
+                whiteSpace: 'nowrap',
+                fontWeight: '500',
+                marginLeft: '4px'
+              }}>
+                (Exp: {timeLeftStr})
+              </span>
+            )}
           </div>
           
           {/* Desktop Buttons */}
@@ -2214,7 +2295,13 @@ function AdminDashboard() {
                     });
                     
                     // Now activate the question
-                    setTimeout(() => toggleQuestion(modalData.id), 500);
+                    setTimeout(() => {
+                      if (modalData.subId) {
+                        toggleSubQuestion(modalData.subId, modalData.id);
+                      } else {
+                        toggleQuestion(modalData.id);
+                      }
+                    }, 500);
                   } catch (error) {
                     setToast({
                       message: 'Failed to clear history. Please try manually.',
